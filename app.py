@@ -3,6 +3,8 @@ import cv2
 import validators
 from flask import Flask, render_template, request, Response
 from send_mail import prepare_and_send_email
+from detection import get_detector, DETECTOR_REGISTRY
+import time
 
 # Initialize the Flask application
 app = Flask(__name__)
@@ -16,6 +18,8 @@ app.config['SECRET_KEY'] = 'ppe_violation_detection'
 frames_buffer = []  # buffer to store frames from a stream
 vid_path = app.config["VIDEO_UPLOADS"] + '/vid.mp4'  # path to uploaded/stored video file
 video_frames = cv2.VideoCapture(vid_path)  # video capture object
+# detectors enabled for processing
+selected_detectors = list(DETECTOR_REGISTRY.keys())
 
 
 def allowed_video(filename):
@@ -68,7 +72,7 @@ def generate_raw_frames():
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 
-def generate_processed_frames(conf_=0.25):
+def generate_processed_frames(detectors=None, conf_=0.25):
     """
     A function to yield processed frames from stored video file or ip cam stream after violation detection
 
@@ -78,8 +82,33 @@ def generate_processed_frames(conf_=0.25):
     Yields:
         bytes: a processed frame from the video file or ip cam stream
     """
-    # to be implemented
-    pass
+    global frames_buffer
+
+    if detectors is None:
+        detectors = selected_detectors
+    detector_instances = []
+    for name in detectors:
+        DetClass = get_detector(name)
+        det = DetClass(conf=conf_)
+        det.load_model()
+        detector_instances.append(det)
+
+    while True:
+        if not frames_buffer:
+            time.sleep(0.01)
+            continue
+        frame = frames_buffer.pop(0)
+        for det in detector_instances:
+            results = det.detect(frame)
+            for box, label in results:
+                x1, y1, x2, y2 = box
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        _, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 
 @app.route('/video_raw')
@@ -96,14 +125,14 @@ def video_raw():
 
 @app.route('/video_processed')
 def video_processed():
-    """A function to handle the requests for the processed video stream after violation detection
-
-    Returns:
-        Response: a response object containing the processed video stream
-    """
-    # default confidence threshold
-    conf = 0.75
-    return Response(generate_processed_frames(conf_=conf), mimetype='multipart/x-mixed-replace; boundary=frame')
+    """Return the processed video stream with selected detectors."""
+    conf = float(request.args.get('conf', 0.75))
+    detectors_arg = request.args.get('detectors')
+    detectors = None
+    if detectors_arg:
+        detectors = [d.strip() for d in detectors_arg.split(',') if d.strip()]
+    return Response(generate_processed_frames(detectors=detectors, conf_=conf),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @app.route('/', methods=["GET", "POST"])
@@ -127,7 +156,7 @@ def submit_form():
     """
     # global variables
     # noinspection PyGlobalUndefined
-    global vid_path, video_frames, frames_buffer
+    global vid_path, video_frames, frames_buffer, selected_detectors
 
     # if the request is a POST request made by user interaction with the HTML form
     if request.method == "POST":
@@ -160,6 +189,10 @@ def submit_form():
                     except Exception as e:
                         print(e)
                         return "Error! The video could not be saved"
+
+        # update selected detectors if provided
+        if 'detectors' in request.form:
+            selected_detectors = [d for d in request.form.getlist('detectors') if d]
 
         # handle inference request for a video file
         elif 'inference_video_button' in request.form:
