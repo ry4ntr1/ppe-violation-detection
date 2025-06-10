@@ -19,3 +19,20 @@ License:
 This repository is released under the [LICENSE] and encourages open collaboration and innovation in the domain of PPE violation detection.
 
 We believe that by combining the power of AI/ML with workplace safety, we can contribute to creating safer environments for individuals and foster a culture of adherence to PPE protocols. Join us in this mission by exploring, contributing, and utilizing the capabilities of this PPE - Violation Detection using AI/ML repository.
+
+## Detector Usage
+
+The application now uses a YOLOv5 model (`ppe.pt`) to detect common PPE and
+workplace objects. The model is wrapped in a detector located in the
+`detection/` package. You can enable or disable detectors when requesting the
+processed video stream using the `detectors` query parameter. For example:
+
+```
+http://localhost:5000/video_processed?detectors=ppe
+```
+
+When no parameter is supplied all detectors are enabled. Currently the registry
+contains the single `ppe` detector which reports the following classes:
+`Hardhat`, `Mask`, `NO-Hardhat`, `NO-Mask`, `NO-Safety Vest`, `Person`,
+`Safety Cone`, `Safety Vest`, `machinery` and `vehicle`.
+
