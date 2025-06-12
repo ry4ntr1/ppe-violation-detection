@@ -51,3 +51,6 @@ validators>=0.20.0
 google-api-python-client 
 google-auth-httplib2 
 google-auth-oauthlib
+
+# YOLOv8
+ultralytics>=8.0.0

@@ -4,234 +4,419 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+    
+    <!-- Apple-like meta tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    
     <!--=============== REMIXICONS ===============-->
-    <link href="https://cdn.jsdelivr.net/npm/remixicon@2.5.0/fonts/remixicon.css" rel="stylesheet">
-
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    
     <!--=============== CSS ===============-->
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename="css/styles.css") }}">
-
-    <title>PPE Violation Detection</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/styles.css') }}">
+    
+    <title>PPE Violation Detection — Safety Monitoring System</title>
+    
+    <!-- Favicon for Apple-like experience -->
+    <link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦺</text></svg>">
 </head>
 
 <body>
-    <!--=============== AJAX ===============-->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <!--=============== HEADER ===============-->
+    <header class="header" id="header">
+        <img src="{{ url_for('static', filename='assets/bizmetric-logo.png') }}" alt="Bizmetric Logo" class="logo">
+        <div class="title">
+            <h1>PPE Violation Detection</h1>
+        </div>
+    </header>
 
+    <!--=============== MAIN CONTENT ===============-->
+    <main class="main-container">
+        <!--=============== VIDEO STREAMS ===============-->
+        <section class="gallery_container">
+            <!-- Original Video Feed -->
+            <div class="gallery">
+                <div class="gallery-header">
+                    <h3 class="gallery-title">Original Feed</h3>
+                    <div class="status-indicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Live</span>
+                    </div>
+                </div>
+                <img src="{{ url_for('video_raw') }}" alt="Original video feed" />
+                <div class="video-overlay{% if current_video == 'No video selected' %} no-video{% endif %}">{{ current_video }}</div>
+            </div>
+
+            <!-- Processed Video Feed -->
+            <div class="gallery">
+                <div class="gallery-header">
+                    <h3 class="gallery-title">AI Detection</h3>
+                    <div class="status-indicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Processing</span>
+                    </div>
+                </div>
+                <img src="{{ url_for('video_processed', detectors='ppe') }}" alt="Processed video with detections" />
+                <div class="video-overlay{% if current_video == 'No video selected' %} no-video{% endif %}">{{ current_video }}</div>
+            </div>
+        </section>
+
+        <!--=============== CONTROL PANEL ===============-->
+        <section class="operations_wrapper">
+            <form id="myform" enctype="multipart/form-data" method="post">
+                <div class="btn">
+                    <!-- Video Source Section -->
+                    <div class="button-group" style="flex: 2;">
+                        <button type="button" class="btn-primary btn-compact{% if current_video == 'No video selected' %} pulse-attention{% endif %}" onclick="showVideoMenu()">
+                            <i class="ri-folder-video-line button__icon"></i>
+                            Change Source
+                        </button>
+                        <div class="divider-vertical"></div>
+                        <input type="text" 
+                               class="ip_address-input" 
+                               name="ip_address_textbox" 
+                               id="ip_address_textbox"
+                               placeholder="Stream URL"
+                               value="">
+                        <button type="button" class="btn-primary btn-compact" onclick="live_inference()">
+                            <i class="ri-live-line button__icon"></i>
+                            Go Live
+                        </button>
+                    </div>
+
+                    <!-- Actions Section -->
+                    <div class="button-group" style="flex: 1; justify-content: flex-end;">
+                        <input type="email" 
+                               class="email-input"
+                               placeholder="Alert email" 
+                               value=""
+                               name="alert_email_textbox" 
+                               id="alert_email_textbox"
+                               style="max-width: 200px;">
+                        <div class="toggle__content">
+                            <label class="toggle__label">
+                                <input type="checkbox" 
+                                       class="toggle__check" 
+                                       name="alert_email_checkbox"
+                                       id="alert_email_checkbox" />
+                                <div class="toggle__switch">
+                                    <div class="toggle__slider"></div>
+                                </div>
+                            </label>
+                        </div>
+                        <button type="button" class="btn-primary btn-compact" onclick="download_file()">
+                            <i class="ri-download-2-line button__icon"></i>
+                            Report
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <!-- Video Selection Menu -->
+    <div id="video-menu" class="video-menu" style="display: none;">
+        <div class="video-menu-content">
+            <div class="video-menu-header">
+                <h3>Select Video Source</h3>
+                <button class="close-btn" onclick="hideVideoMenu()">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div id="video-list" class="video-list">
+                <!-- Video items will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <!--=============== AJAX / JavaScript ===============-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    
     <script>
-
-        $(document).ready(function () {
-            $('#myform').submit(function (event) {
-                event.preventDefault()
-                //submit_form(event);
+        // Modern ES6+ JavaScript with improved UX
+        
+        // Form submission prevention
+        $(document).ready(function() {
+            $('#myform').submit(function(event) {
+                event.preventDefault();
             });
-        });
-
-        $(document).ready(function () {
-            $('#alert_email_checkbox').change(function (event) {
-                event.preventDefault()
-                data = {
-                    'alert_email_checkbox': $('#alert_email_checkbox').is(':checked'),
-                    'alert_email_textbox': $('#alert_email_textbox').val(),
+            
+            // Email alert toggle handler
+            $('#alert_email_checkbox').change(function(event) {
+                event.preventDefault();
+                const isChecked = $(this).is(':checked');
+                const email = $('#alert_email_textbox').val();
+                
+                if (isChecked && !email) {
+                    showNotification('Please enter an email address first', 'warning');
+                    $(this).prop('checked', false);
+                    $('#alert_email_textbox').focus();
+                    return;
                 }
+                
                 $.ajax({
                     type: 'POST',
                     url: '/submit',
-                    data: data,
-                    success: function (data) {
-                        alert(data);
+                    data: {
+                        'alert_email_checkbox': isChecked,
+                        'alert_email_textbox': email
                     },
-                    error: function (error) {
-                        alert('Checkbox submission failed!');
+                    success: function(data) {
+                        showNotification(data, 'success');
+                    },
+                    error: function(error) {
+                        showNotification('Failed to update alert settings', 'error');
                     }
                 });
             });
         });
 
-
-        function upload_file() {
-            $.ajax({
-                type: 'POST',
-                url: '/submit',
-                data: new FormData($('#myform')[0]),//formData,
-                processData: false,
-                contentType: false,
-                cache: false,          //Required
-                success: function (data) {
-                    alert(data);
-                },
-                error: function (error) {
-                    alert('Form submission failed!');
-                }
-            });
+        // Improved notification system
+        function showNotification(message, type = 'info') {
+            // Remove any existing notifications
+            $('.notification').remove();
+            
+            const notification = $(`
+                <div class="notification notification-${type}">
+                    <i class="ri-${getIconForType(type)} notification-icon"></i>
+                    <span>${message}</span>
+                </div>
+            `);
+            
+            $('body').append(notification);
+            
+            // Animate in
+            setTimeout(() => notification.addClass('show'), 10);
+            
+            // Auto-hide after 4 seconds
+            setTimeout(() => {
+                notification.removeClass('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 4000);
+        }
+        
+        function getIconForType(type) {
+            const icons = {
+                'success': 'check-line',
+                'error': 'error-warning-line',
+                'warning': 'alert-line',
+                'info': 'information-line'
+            };
+            return icons[type] || icons.info;
         }
 
-        function download_file() {
-            data = {
-                'download_button': 'True',
-            }
+        // Show video selection menu
+        function showVideoMenu() {
             $.ajax({
-                type: 'POST',
-                url: '/submit',
-                data: data,
-                xhrFields: {
-                    responseType: 'blob' // to avoid binary data being mangled on charset conversion
-                },
-                // to download file as an attachment
-                //Reference - https://stackoverflow.com/questions/16086162/handle-file-download-from-ajax-post
-                success: function (blob, status, xhr) {
-                    // check for a filename
-                    var filename = "";
-                    var disposition = xhr.getResponseHeader('Content-Disposition');
-                    if (disposition && disposition.indexOf('attachment') !== -1) {
-                        var filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-                        var matches = filenameRegex.exec(disposition);
-                        if (matches != null && matches[1]) filename = matches[1].replace(/['"]/g, '');
-                    }
-
-                    if (typeof window.navigator.msSaveBlob !== 'undefined') {
-                        // IE workaround for "HTML7007: One or more blob URLs were revoked by closing the blob for which they were created. These URLs will no longer resolve as the data backing the URL has been freed."
-                        window.navigator.msSaveBlob(blob, filename);
+                type: 'GET',
+                url: '/video_list',
+                success: function(response) {
+                    const data = JSON.parse(response);
+                    const videoList = $('#video-list');
+                    videoList.empty();
+                    
+                    if (data.videos.length === 0) {
+                        videoList.html('<p class="no-videos">No videos found. Please add .mp4 files to the static/video/ folder.</p>');
                     } else {
-                        var URL = window.URL || window.webkitURL;
-                        var downloadUrl = URL.createObjectURL(blob);
-
-                        if (filename) {
-                            // use HTML5 a[download] attribute to specify filename
-                            var a = document.createElement("a");
-                            // safari doesn't support this yet
-                            if (typeof a.download === 'undefined') {
-                                window.location.href = downloadUrl;
-                            } else {
-                                a.href = downloadUrl;
-                                a.download = filename;
-                                document.body.appendChild(a);
-                                a.click();
-                            }
-                        } else {
-                            window.location.href = downloadUrl;
-                        }
-                        setTimeout(function () { URL.revokeObjectURL(downloadUrl); }, 100); // cleanup
+                        data.videos.forEach(video => {
+                            const isActive = video === data.current;
+                            const videoItem = $(`
+                                <div class="video-item ${isActive ? 'active' : ''}" onclick="selectVideo('${video}')">
+                                    <i class="ri-film-line"></i>
+                                    <span>${video}</span>
+                                    ${isActive ? '<i class="ri-check-line"></i>' : ''}
+                                </div>
+                            `);
+                            videoList.append(videoItem);
+                        });
                     }
+                    
+                    $('#video-menu').fadeIn(200);
                 },
-                error: function (error) {
-                    alert('Form submission failed!');
+                error: function() {
+                    showNotification('Failed to load video list', 'error');
                 }
             });
         }
-
-        function video_inference() {
-            data = {
-                'inference_video_button': 'true',
-            }
+        
+        function hideVideoMenu() {
+            $('#video-menu').fadeOut(200);
+        }
+        
+        // Select a video from the menu
+        function selectVideo(videoName) {
             $.ajax({
                 type: 'POST',
                 url: '/submit',
-                data: data,
-                success: function (data) {
-                    //alert(data);
-                    //window.location.href = '/';
+                data: {
+                    'change_video': 'true',
+                    'video_name': videoName
                 },
-                error: function (error) {
-                    alert('Video inference failed!');
+                success: function(data) {
+                    showNotification(data, 'success');
+                    hideVideoMenu();
+                    // Reload to refresh video streams
+                    setTimeout(() => window.location.reload(), 500);
+                },
+                error: function(xhr) {
+                    showNotification(xhr.responseText || 'Failed to change video', 'error');
                 }
             });
         }
 
+        // Download with progress
+        function download_file() {
+            const downloadBtn = event.target;
+            const originalText = downloadBtn.innerHTML;
+            downloadBtn.innerHTML = '<span class="loading"></span> Preparing...';
+            downloadBtn.disabled = true;
+            
+            $.ajax({
+                type: 'POST',
+                url: '/submit',
+                data: { 'download_button': 'True' },
+                dataType: 'text',
+                success: function(data, status, xhr) {
+                    // The response should trigger a download automatically
+                    showNotification('Report downloaded successfully', 'success');
+                    downloadBtn.innerHTML = originalText;
+                    downloadBtn.disabled = false;
+                    
+                    // Handle text/plain response
+                    const blob = new Blob([data], { type: 'text/plain' });
+                    const filename = getFilenameFromHeader(xhr) || 'ppe_violation_report.txt';
+                    downloadBlob(blob, filename);
+                },
+                error: function(error) {
+                    showNotification('Download failed. Please try again.', 'error');
+                    downloadBtn.innerHTML = originalText;
+                    downloadBtn.disabled = false;
+                }
+            });
+        }
+        
+        function getFilenameFromHeader(xhr) {
+            const disposition = xhr.getResponseHeader('Content-Disposition');
+            if (disposition && disposition.indexOf('attachment') !== -1) {
+                const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                const matches = filenameRegex.exec(disposition);
+                if (matches != null && matches[1]) {
+                    return matches[1].replace(/['"]/g, '');
+                }
+            }
+            return null;
+        }
+        
+        function downloadBlob(blob, filename) {
+            if (window.navigator.msSaveBlob) {
+                window.navigator.msSaveBlob(blob, filename);
+            } else {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }, 100);
+            }
+        }
+
+        // Live inference
         function live_inference() {
-            data = {
-                'live_inference_button': 'true',
-                'live_inference_textbox': $('#ip_address_textbox').val(),
+            const streamUrl = $('#ip_address_textbox').val().trim();
+            if (!streamUrl) {
+                showNotification('Please enter a stream URL', 'warning');
+                $('#ip_address_textbox').focus();
+                return;
             }
+            
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="loading"></span> Connecting...';
+            btn.disabled = true;
+            
             $.ajax({
                 type: 'POST',
                 url: '/submit',
-                data: data,
-                success: function (data) {
-                    //alert(data);
-                    //window.location.href = '/';
+                data: {
+                    'live_inference_button': 'true',
+                    'live_inference_textbox': streamUrl
                 },
-                error: function (xhr, status, error) {
-                    alert(xhr.responseText);
+                success: function(data) {
+                    showNotification('Connected to live stream', 'success');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    updateStreamStatus('live');
+                },
+                error: function(xhr, status, error) {
+                    showNotification(xhr.responseText || 'Failed to connect to stream', 'error');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
                 }
             });
         }
-
-
+        
+        // Update stream status indicators
+        function updateStreamStatus(status) {
+            const statusElements = $('.status-text');
+            const statusDots = $('.status-dot');
+            
+            if (status === 'live') {
+                statusElements.text('Live');
+                statusDots.css('background-color', 'var(--accent-green)');
+            } else if (status === 'processing') {
+                statusElements.text('Processing');
+                statusDots.css('background-color', 'var(--accent-orange)');
+            }
+        }
     </script>
-    <!-- =============== HEADER =============== -->
-    <header class="header" id="header">
-        <div class="title">
-            <h1>PPE Violation Detection</h1>
-        </div>
-    </header>
-    <!-- =============== MAIN =============== -->
-
-    <!-- =============== VIDEOS =============== -->
-
-    <div class="gallery_container">
-
-        <div class="gallery">
-            <img src="{{ url_for('video_raw') }}" />
-        </div>
-
-        <div class="gallery">
-            <img src="{{ url_for('video_processed') }}" />
-        </div>
-    </div>
-
-
-    <!-- =============== OPERATIONS =============== -->
-    <div class="operations_wrapper">
-        <form id="myform" enctype="multipart/form-data" method="post">
-            <div class="btn">
-                <div class="upload__button">
-                    <input type="file" class="custom-file-input" name="video" id="video" value="video">
-                    <button type="submit" class="btn-primary" name="video_upload_button" id="video_upload_button"
-                        onclick="upload_file()">Upload Video
-                        <i class="ri-video-upload-fill button__icon"></i>
-                    </button>
-                </div>
-                <div class="live__button">
-                    <button class="btn-primary" name="inference_video_button" id="inference_video_button"
-                        onclick="video_inference()">Inference on Video
-                        <i class="ri-movie-2-fill button__icon"></i>
-                    </button>
-                </div>
-                <div class="inference__button">
-                    <input type="text" class="ip_address-input" name="ip_address_textbox" id="ip_address_textbox"
-                        placeholder="http://192.168.12.10:4747/video" value="http://192.168.12.10:4747/video">
-                    <button type="submit" class="btn-primary" name="live_inference_button" id="live_inference_button"
-                        onclick="live_inference()">Live Inference
-                        <i class="ri-settings-4-fill button__icon"></i>
-                    </button>
-                </div>
-                <div class="download__button">
-                    <button type="submit" class="btn-primary" name="download_button" id="download_button"
-                        onclick="download_file()">Download Report
-                        <i class="ri-file-download-fill button__icon"></i>
-                    </button>
-                </div>
-                <div class="email__sending">
-                    <div class="send__email">
-                        <input type="email" placeholder="Enter Valid Mail" value="support.ai@giindia.com"
-                            name="alert_email_textbox" id="alert_email_textbox">
-                    </div>
-                    <div class="toggle__content">
-                        <label class="toggle__label">
-                            <input type="checkbox" class="toggle__check" name="alert_email_checkbox"
-                                id='alert_email_checkbox' />
-                            <span class="email__label">Send Alert</span>
-                            <div class="toggle__rail">
-                                <span class="toggle__circle"></span>
-                                <span class="toggle__border"></span>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </form>
-    </div>
+    
+    <!--=============== NOTIFICATION STYLES ===============-->
+    <style>
+        .notification {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--space-md) var(--space-lg);
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            min-width: 300px;
+            max-width: 400px;
+            transform: translateX(420px);
+            transition: transform var(--transition-base);
+            z-index: 1000;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        .notification-icon {
+            font-size: var(--text-xl);
+        }
+        
+        .notification-success { border-left: 4px solid var(--accent-green); }
+        .notification-success .notification-icon { color: var(--accent-green); }
+        
+        .notification-error { border-left: 4px solid var(--accent-red); }
+        .notification-error .notification-icon { color: var(--accent-red); }
+        
+        .notification-warning { border-left: 4px solid var(--accent-orange); }
+        .notification-warning .notification-icon { color: var(--accent-orange); }
+        
+        .notification-info { border-left: 4px solid var(--accent-blue); }
+        .notification-info .notification-icon { color: var(--accent-blue); }
+    </style>
 </body>
 
 </html>

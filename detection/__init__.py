@@ -1,7 +1,7 @@
 from .ppe_detector import Detector as PPEDetector
 
 DETECTOR_REGISTRY = {
-    'ppe': PPEDetector,
+    "ppe": PPEDetector,
 }
 
 

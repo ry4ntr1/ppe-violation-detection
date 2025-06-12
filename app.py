@@ -1,237 +1,420 @@
-import os.path
-import cv2
-import validators
-from flask import Flask, render_template, request, Response
-from send_mail import prepare_and_send_email
-from detection import get_detector, DETECTOR_REGISTRY
+import os
 import time
+import cv2
+import numpy as np
+from flask import Flask, render_template, request, Response, send_file
+from send_mail import prepare_and_send_email
+from detection import get_detector  # UPDATED
+import json
+from io import BytesIO
 
 # Initialize the Flask application
 app = Flask(__name__)
 app.config["VIDEO_UPLOADS"] = "static/video"
 app.config["ALLOWED_VIDEO_EXTENSIONS"] = ["MP4", "MOV", "AVI", "WMV", "WEBM"]
+app.config["SECRET_KEY"] = "ppe_violation_detection"
 
-# Secret key for the session
-app.config['SECRET_KEY'] = 'ppe_violation_detection'
+# ensure upload folder exists
+os.makedirs(app.config["VIDEO_UPLOADS"], exist_ok=True)
 
-# global variables
-frames_buffer = []  # buffer to store frames from a stream
-vid_path = app.config["VIDEO_UPLOADS"] + '/vid.mp4'  # path to uploaded/stored video file
-video_frames = cv2.VideoCapture(vid_path)  # video capture object
-# detectors enabled for processing
-selected_detectors = list(DETECTOR_REGISTRY.keys())
+# global state
+frames_buffer = []
+current_video_name = None
+vid_path = None
+video_frames = None
+
+# email alert globals
+email_alert_enabled = False
+email_recipient = None
+last_email_time = 0  # epoch seconds
+EMAIL_COOLDOWN_SEC = 60  # avoid spamming
+
+# violation tracking globals
+violation_log = {}  # {class_name: {'count': int, 'first_seen': timestamp}}
+tracking_loop_count = 0
+current_loop_violations = {}
 
 
-def allowed_video(filename):
-    """
-    A function to check if the uploaded file is a video
+def reset_violation_tracking():
+    """Reset violation tracking for a new video or loop."""
+    global violation_log, current_loop_violations, tracking_loop_count
+    violation_log = {}
+    current_loop_violations = {}
+    tracking_loop_count = 0
 
-    Args:
-        filename (str): name of the uploaded file
 
-    Returns:
-        bool: True if the file is a video, False otherwise
-    """
+def record_violation(class_name):
+    """Record a violation detection."""
+    global current_loop_violations
+
+    if class_name not in current_loop_violations:
+        current_loop_violations[class_name] = {
+            "count": 0,
+            "first_seen": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "first_frame": len(frames_buffer),  # Approximate frame number
+        }
+    current_loop_violations[class_name]["count"] += 1
+
+
+def allowed_video(filename: str) -> bool:
     if "." not in filename:
         return False
+    ext = filename.rsplit(".", 1)[1].upper()
+    return ext in app.config["ALLOWED_VIDEO_EXTENSIONS"]
 
-    extension = filename.rsplit(".", 1)[1]
 
-    if extension.upper() in app.config["ALLOWED_VIDEO_EXTENSIONS"]:
-        return True
-    else:
-        return False
+# Auto-select first available video after functions are defined
+def initialize_video():
+    global current_video_name, vid_path, video_frames
+    video_dir = app.config["VIDEO_UPLOADS"]
+    if os.path.exists(video_dir):
+        # Get all video files and sort them
+        video_files = [f for f in os.listdir(video_dir) if allowed_video(f)]
+        video_files.sort()
+
+        for filename in video_files:
+            current_video_name = filename
+            vid_path = os.path.join(video_dir, filename)
+            video_frames = cv2.VideoCapture(vid_path)
+            if video_frames.isOpened():
+                print(f"Auto-selected video: {filename}")
+                reset_violation_tracking()
+                break
+            else:
+                video_frames = None
+                current_video_name = None
+                vid_path = None
+
+
+initialize_video()
 
 
 def generate_raw_frames():
-    """
-    A function to yield unprocessed frames from stored video file or ip cam stream
+    global \
+        video_frames, \
+        frames_buffer, \
+        tracking_loop_count, \
+        violation_log, \
+        current_loop_violations
 
-    Yields:
-        bytes: a frame from the video file or ip cam stream
-    """
-    global video_frames
+    # If no video is loaded, yield a placeholder image
+    if video_frames is None or not video_frames.isOpened():
+        # Create a black frame with "No video selected" text
+        placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(
+            placeholder,
+            "No video selected",
+            (150, 240),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.2,
+            (255, 255, 255),
+            2,
+        )
+        _, buf = cv2.imencode(".jpg", placeholder)
+        while True:
+            yield (
+                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n"
+            )
+            time.sleep(0.1)
+
+    frame_count = 0
+    fps = video_frames.get(cv2.CAP_PROP_FPS) or 60  # Default to 30 fps if not available
+    frame_delay = 1.0 / fps
+    last_frame_time = time.time()
 
     while True:
-        # Keep reading the frames from the video file or ip cam stream
         success, frame = video_frames.read()
+        if not success:
+            # If video ended, restart from beginning
+            video_frames.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            frame_count = 0
 
-        if success:
-            # create a copy of the frame to store in the buffer
-            frame_copy = frame.copy()
+            # Save violations from completed loop
+            if tracking_loop_count == 0 and current_loop_violations:
+                violation_log = current_loop_violations.copy()
+                tracking_loop_count += 1
+                print(f"Saved violations: {violation_log}")
 
-            # store the frame in the buffer for violation detection
-            frames_buffer.append(frame_copy)
+            success, frame = video_frames.read()
+            if not success:
+                time.sleep(0.01)
+                continue
 
-            # compress the frame and store it in the memory buffer
-            _, buffer = cv2.imencode('.jpg', frame)
-            # convert the buffer to bytes
-            frame = buffer.tobytes()
-            # yield the frame to the browser
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        # Control frame rate
+        current_time = time.time()
+        time_since_last_frame = current_time - last_frame_time
+        if time_since_last_frame < frame_delay:
+            time.sleep(frame_delay - time_since_last_frame)
+        last_frame_time = time.time()
+
+        # Add frame to buffer with frame number
+        frame_count += 1
+        frames_buffer.append(frame.copy())
+
+        # Keep buffer size reasonable (max 60 frames for smoother playback)
+        if len(frames_buffer) > 60:
+            # Remove oldest frames
+            frames_buffer = frames_buffer[-60:]
+
+        _, buf = cv2.imencode(".jpg", frame)
+        yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n")
 
 
-def generate_processed_frames(detectors=None, conf_=0.25):
-    """
-    A function to yield processed frames from stored video file or ip cam stream after violation detection
+def generate_processed_frames(
+    conf_: float = 0.25, detector_names: list[str] | None = None
+):
+    """Read frames, run multiple detectors, overlay boxes and yield MJPEG."""
+    global last_email_time
 
-    Args:
-        conf_ (float, optional): confidence threshold for the detection. Defaults to 0.25.
+    # If no video is loaded, yield a placeholder image
+    if video_frames is None or not video_frames.isOpened():
+        # Create a black frame with "No video selected" text
+        placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(
+            placeholder,
+            "No video selected",
+            (150, 240),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.2,
+            (255, 255, 255),
+            2,
+        )
+        _, buf = cv2.imencode(".jpg", placeholder)
+        while True:
+            yield (
+                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n"
+            )
+            time.sleep(0.1)
 
-    Yields:
-        bytes: a processed frame from the video file or ip cam stream
-    """
-    global frames_buffer
+    if detector_names is None:
+        detector_names = ["ppe"]
 
-    if detectors is None:
-        detectors = selected_detectors
-    detector_instances = []
-    for name in detectors:
-        DetClass = get_detector(name)
-        det = DetClass(conf=conf_)
-        det.load_model()
-        detector_instances.append(det)
+    # Instantiate each detector once
+    detectors = [get_detector(n)(conf=conf_) for n in detector_names]
 
+    # Assign a colour per detector (BGR)
+    colour_map = {
+        "ppe": (255, 0, 0),  # Blue
+    }
+
+    processed_index = 0
     while True:
-        if not frames_buffer:
+        if len(frames_buffer) == 0:
             time.sleep(0.01)
             continue
-        frame = frames_buffer.pop(0)
-        for det in detector_instances:
-            results = det.detect(frame)
-            for box, label in results:
+
+        # Process frames sequentially to avoid skipping
+        buffer_len = len(frames_buffer)
+
+        # If we've processed all frames, wait for new ones
+        if processed_index >= buffer_len:
+            # If way ahead, reset to catch up with buffer
+            if processed_index > buffer_len + 30:
+                processed_index = max(0, buffer_len - 10)
+            else:
+                time.sleep(0.01)
+                continue
+
+        # Get the frame at our current index
+        try:
+            frame = frames_buffer[processed_index].copy()
+            processed_index += 1
+        except IndexError:
+            # Buffer was trimmed, reset index
+            processed_index = max(0, buffer_len - 1)
+            continue
+
+        # Iterate over detectors
+        violations_detected = False
+        for name, det in zip(detector_names, detectors):
+            colour = colour_map.get(name, (0, 255, 0))
+            for box, label in det.detect(frame):
+                # Check if this is a violation
+                if name == "ppe" and any(
+                    v in label for v in ["NO-Hardhat", "NO-Mask", "NO-Safety Vest"]
+                ):
+                    violations_detected = True
+                    # Extract the class name from the label (e.g., "NO-Hardhat 0.95" -> "NO-Hardhat")
+                    violation_class = label.split()[0]
+                    record_violation(violation_class)
+
+                # PPE detector returns (x1, y1, x2, y2) for bounding box
                 x1, y1, x2, y2 = box
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5, (0, 255, 0), 1, cv2.LINE_AA)
-        _, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 2)
+                text_origin = (x1, max(0, y1 - 6))
+
+                cv2.putText(
+                    frame,
+                    label,
+                    text_origin,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    colour,
+                    2,
+                    cv2.LINE_AA,
+                )
+
+        # Email alert: only if violations detected
+        if violations_detected and email_alert_enabled and email_recipient:
+            current_time = time.time()
+            if current_time - last_email_time > EMAIL_COOLDOWN_SEC:
+                # capture JPEG bytes
+                _, jpeg_buf = cv2.imencode(".jpg", frame)
+                try:
+                    prepare_and_send_email(
+                        sender="support.ai@giindia.com",
+                        recipient=email_recipient,
+                        subject="PPE Violation Detected",
+                        message_text="A PPE violation was detected at "
+                        + time.strftime("%Y-%m-%d %H:%M:%S"),
+                        im0=frame,
+                    )
+                    last_email_time = current_time
+                except Exception as e:
+                    print("Email send failed:", e)
+
+        _, buf = cv2.imencode(".jpg", frame)
+        yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n")
 
 
-@app.route('/video_raw')
+@app.route("/video_raw")
 def video_raw():
-    """
-    A function to handle the requests for the raw video stream
-
-    Returns:
-        Response: a response object containing the raw video stream
-    """
-
-    return Response(generate_raw_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(
+        generate_raw_frames(), mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
 
 
-@app.route('/video_processed')
+@app.route("/video_processed")
 def video_processed():
-    """Return the processed video stream with selected detectors."""
-    conf = float(request.args.get('conf', 0.75))
-    detectors_arg = request.args.get('detectors')
-    detectors = None
-    if detectors_arg:
-        detectors = [d.strip() for d in detectors_arg.split(',') if d.strip()]
-    return Response(generate_processed_frames(detectors=detectors, conf_=conf),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
+    conf = float(request.args.get("conf", 0.5))
+    detector_param = request.args.get("detectors", "ppe")
+    detector_names = [d.strip() for d in detector_param.split(",") if d.strip()]
+
+    return Response(
+        generate_processed_frames(conf_=conf, detector_names=detector_names),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
 
 
-@app.route('/', methods=["GET", "POST"])
+@app.route("/", methods=["GET", "POST"])
 def index():
-    """
-    A function to handle the requests from the web page
-
-    Returns:
-        render_template: the index.html page (home page)
-    """
-    return render_template('index.html')
+    return render_template(
+        "index.html", current_video=current_video_name or "No video selected"
+    )
 
 
-@app.route('/submit', methods=['POST'])
+@app.route("/video_list", methods=["GET"])
+def video_list():
+    """Return list of available videos in the video folder."""
+    video_dir = app.config["VIDEO_UPLOADS"]
+    videos = []
+
+    if os.path.exists(video_dir):
+        for filename in os.listdir(video_dir):
+            if allowed_video(filename):
+                videos.append(filename)
+
+    # Sort videos alphabetically
+    videos.sort()
+
+    return json.dumps({"videos": videos, "current": current_video_name})
+
+
+@app.route("/submit", methods=["POST"])
 def submit_form():
-    """
-    A function to handle the requests from the HTML form on the web page
+    global \
+        video_frames, \
+        frames_buffer, \
+        vid_path, \
+        current_video_name, \
+        email_alert_enabled, \
+        email_recipient, \
+        violation_log
 
-    Returns:
-        str: a string containing the response message
-    """
-    # global variables
-    # noinspection PyGlobalUndefined
-    global vid_path, video_frames, frames_buffer, selected_detectors
+    # Change video source
+    if "change_video" in request.form:
+        video_name = request.form.get("video_name", "")
 
-    # if the request is a POST request made by user interaction with the HTML form
-    if request.method == "POST":
-        # print(request.form)vid_ip_path.startswith('http://')
+        if not video_name:
+            return "No video specified", 400
 
-        # handle video upload request
-        if request.files:
-            video = request.files['video']
+        new_path = os.path.join(app.config["VIDEO_UPLOADS"], video_name)
+        if not os.path.exists(new_path):
+            return f"Video {video_name} not found", 404
 
-            # check if video file is uploaded or not
-            if video.filename == '':
-                # display a flash alert message on the web page
-                return "That video must have a file name"
+        # Update globals
+        current_video_name = video_name
+        vid_path = new_path
+        video_frames = cv2.VideoCapture(vid_path)
+        frames_buffer.clear()
+        reset_violation_tracking()  # Reset violation tracking for new video
 
-            # check if the uploaded file is a video
-            elif not allowed_video(video.filename):
-                # display a flash alert message on the web page
-                return "Unsupported video. The video file must be in MP4, MOV, AVI, WEBM or WMV format."
-            else:
-                # default video name
-                filename = 'vid.mp4'
-                # ensure video size is less than 200MB
-                if video.content_length > 200 * 1024 * 1024:
-                    return "Error! That video is too large"
-                else:
-                    # noinspection PyBroadException
-                    try:
-                        video.save(os.path.join(app.config["VIDEO_UPLOADS"], filename))
-                        return "That video is successfully uploaded"
-                    except Exception as e:
-                        print(e)
-                        return "Error! The video could not be saved"
+        if not video_frames.isOpened():
+            return f"Error opening video {video_name}", 500
 
-        # update selected detectors if provided
-        if 'detectors' in request.form:
-            selected_detectors = [d for d in request.form.getlist('detectors') if d]
+        # Get the new video's FPS
+        fps = video_frames.get(cv2.CAP_PROP_FPS)
+        print(f"Loaded {video_name} with {fps:.2f} FPS")
 
-        # handle inference request for a video file
-        elif 'inference_video_button' in request.form:
-            video_frames = cv2.VideoCapture(vid_path)
-            # clear the buffer of frames that may have been stored from a previous inference
-            frames_buffer.clear()
-            # check if the video is opened
-            if not video_frames.isOpened():
-                return 'Error in opening video', 500
-            else:
-                frames_buffer.clear()
-                return 'success'
+        return f"Switched to {video_name}"
 
-        # handle inference request for a live stream via IP camera
-        elif 'live_inference_button' in request.form:
-            # to be implemented
-            pass
+    # Download report
+    if "download_button" in request.form:
+        # Create detailed violation report
+        violation_details = ""
+        if violation_log:
+            violation_details = "\n\nViolation Details:\n"
+            violation_details += "-" * 50 + "\n"
+            violation_categories = []
+            for violation_class, data in sorted(violation_log.items()):
+                violation_details += f"\n{violation_class}:\n"
+                violation_details += f"  - Number of Detections: {data['count']}\n"
+                violation_details += f"  - First Detected: {data['first_seen']}\n"
+                violation_categories.append(violation_class)
+            violation_details += (
+                f"\nTotal Violation Categories: {len(violation_categories)}\n"
+            )
+        else:
+            violation_details = "\n\nNo violations detected.\n"
 
-        # handle email request# handle alert email request
-        elif 'alert_email_checkbox' in request.form:
-            email_checkbox_value = request.form['alert_email_checkbox']
-            if email_checkbox_value == 'false':
-                return "Alert email is disabled"
-            else:
-                alert_recipient = request.form['alert_email_textbox']
-                # send email
-                prepare_and_send_email(sender='hamza2019cs148@abesit.edu.in',
-                                       recipient=alert_recipient,
-                                       subject='Greeting from Global Infoventures',
-                                       message_text='Hello, this is a test email from Global Infoventures',
-                                       im0=cv2.imread('static/test.jpg'))
-                return f"Alert email is sent at {alert_recipient} with the attached image"
+        report_content = f"""PPE Violation Detection Report
+Generated: {time.strftime("%Y-%m-%d %H:%M:%S")}
+Current Video: {current_video_name}
 
-        # handle download request for the detections summary report
-        elif 'download_button' in request.form:
-            return Response(open('static/reports/detections_summary.txt', 'r').read(),
-                            mimetype='text/plain',
-                            headers={"Content-Disposition": "attachment;filename=detections_summary.txt"})
+Email Alerts: {"Enabled" if email_alert_enabled else "Disabled"}
+Alert Recipient: {email_recipient if email_recipient else "Not set"}
+
+Detection Configuration:
+- Confidence Threshold: 0.5
+- Active Detectors: PPE
+{violation_details}
+
+Note: Violations are tracked from video start until the first complete loop.
+"""
+
+        # Create a BytesIO object to send as file
+        report_bytes = BytesIO(report_content.encode("utf-8"))
+        report_bytes.seek(0)
+
+        return send_file(
+            report_bytes,
+            mimetype="text/plain",
+            as_attachment=True,
+            download_name=f"ppe_report_{time.strftime('%Y%m%d_%H%M%S')}.txt",
+        )
+
+    # Email alert toggle
+    if "alert_email_checkbox" in request.form:
+        enabled_str = request.form.get("alert_email_checkbox", "false")
+        email_alert_enabled = enabled_str.lower() in ("true", "1", "on")
+        email_recipient = request.form.get("alert_email_textbox", None)
+        status_msg = f"Email alerts {'enabled' if email_alert_enabled else 'disabled'} for {email_recipient}"
+        return status_msg
+
+    return "No action taken"
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Allow overriding the port via environment variable, default to 5000.
+    port = int(os.getenv("PORT", 5001))
+    app.run(debug=True, host="0.0.0.0", port=port)

@@ -5,3 +5,18 @@ __pycache__/
 
 # PyTorch model files
 *.pt
+
+# macOS
+.DS_Store
+
+# Video files (uncomment if you want to exclude all videos)
+# static/video/*.mp4
+# static/video/*.avi
+# static/video/*.mov
+
+# Gmail API credentials
+client_secrets.json
+token.json
+
+# Violation screenshots
+static/violations/
