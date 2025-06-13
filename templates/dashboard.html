@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Apple-like meta tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    
+    <!--=============== REMIXICONS ===============-->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    
+    <!--=============== CSS ===============-->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    
+    <title>PPE Detection Dashboard — Multi-Source Monitoring</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦺</text></svg>">
+</head>
+
+<body>
+    <!--=============== HEADER ===============-->
+    <header class="header" id="header">
+        <img src="{{ url_for('static', filename='assets/bizmetric-logo.png') }}" alt="Bizmetric Logo" class="logo">
+        <div class="title">
+            <h1>PPE Detection Dashboard</h1>
+        </div>
+        <div class="header-actions">
+            <button class="btn-icon" onclick="toggleFullscreen()" title="Fullscreen">
+                <i class="ri-fullscreen-line"></i>
+            </button>
+            <button class="btn-icon" onclick="showSettings()" title="Settings">
+                <i class="ri-settings-3-line"></i>
+            </button>
+        </div>
+    </header>
+
+    <!--=============== MAIN DASHBOARD ===============-->
+    <main class="dashboard-container">
+        <!--=============== SUMMARY CARDS ===============-->
+        <section class="summary-section">
+            <div class="summary-card">
+                <div class="card-icon">
+                    <i class="ri-camera-line"></i>
+                </div>
+                <div class="card-content">
+                    <h3>Active Sources</h3>
+                    <p class="card-value" id="active-sources">0</p>
+                </div>
+            </div>
+            
+            <div class="summary-card alert">
+                <div class="card-icon">
+                    <i class="ri-alert-line"></i>
+                </div>
+                <div class="card-content">
+                    <h3>Active Violations</h3>
+                    <p class="card-value" id="active-violations">0</p>
+                </div>
+            </div>
+            
+            <div class="summary-card">
+                <div class="card-icon">
+                    <i class="ri-shield-check-line"></i>
+                </div>
+                <div class="card-content">
+                    <h3>Compliance Rate</h3>
+                    <p class="card-value" id="compliance-rate">100%</p>
+                </div>
+            </div>
+            
+            <div class="summary-card">
+                <div class="card-icon">
+                    <i class="ri-time-line"></i>
+                </div>
+                <div class="card-content">
+                    <h3>Last Detection</h3>
+                    <p class="card-value" id="last-detection">--:--</p>
+                </div>
+            </div>
+        </section>
+
+        <!--=============== TIMELINE SECTION ===============-->
+        <section class="timeline-section">
+            <div class="section-header">
+                <h2>Detection Timeline</h2>
+                <div class="timeline-controls">
+                    <select id="time-range" class="time-range-select">
+                        <option value="300">Last 5 minutes</option>
+                        <option value="900">Last 15 minutes</option>
+                        <option value="1800">Last 30 minutes</option>
+                        <option value="3600">Last 1 hour</option>
+                    </select>
+                    <button class="btn-secondary" onclick="exportTimeline()">
+                        <i class="ri-download-line"></i> Export
+                    </button>
+                </div>
+            </div>
+            
+            <div class="timeline-container" id="timeline-container">
+                <!-- Timelines will be dynamically added here -->
+            </div>
+        </section>
+
+        <!--=============== SOURCE LIST ===============-->
+        <section class="sources-section">
+            <div class="section-header">
+                <h2>Camera Sources</h2>
+                <button class="btn-primary" onclick="showAddSourceModal()">
+                    <i class="ri-add-line"></i> Add Source
+                </button>
+            </div>
+            
+            <div class="sources-grid" id="sources-grid">
+                <!-- Source cards will be dynamically added here -->
+            </div>
+        </section>
+    </main>
+
+    <!--=============== ADD SOURCE MODAL ===============-->
+    <div id="add-source-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Camera Source</h3>
+                <button class="close-btn" onclick="hideAddSourceModal()">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="source-type">Source Type</label>
+                    <select id="source-type">
+                        <option value="file">Video File</option>
+                        <option value="stream">Live Stream</option>
+                    </select>
+                </div>
+                <div class="form-group" id="file-select-group">
+                    <label for="video-file">Select Video</label>
+                    <select id="video-file">
+                        <!-- Options will be populated dynamically -->
+                    </select>
+                </div>
+                <div class="form-group" id="stream-url-group" style="display: none;">
+                    <label for="stream-url">Stream URL</label>
+                    <input type="text" id="stream-url" placeholder="rtsp://...">
+                </div>
+                <div class="form-group">
+                    <label for="source-name">Source Name (Optional)</label>
+                    <input type="text" id="source-name" placeholder="e.g., Main Entrance">
+                    <small style="color: var(--text-secondary); font-size: var(--text-xs);">Leave blank to auto-generate name</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="hideAddSourceModal()">Cancel</button>
+                <button class="btn-primary" onclick="addSource()">Add Source</button>
+            </div>
+        </div>
+    </div>
+
+    <!--=============== SETTINGS MODAL ===============-->
+    <div id="settings-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button class="close-btn" onclick="hideSettings()">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="alert-email">Alert Email</label>
+                    <input type="email" id="alert-email" placeholder="alert@example.com" value="{{ email_recipient }}">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="enable-alerts" {{ 'checked' if email_alert_enabled else '' }}>
+                        Enable Email Alerts
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="detection-confidence">Detection Confidence</label>
+                    <input type="range" id="detection-confidence" min="0" max="100" value="50">
+                    <span id="confidence-value">50%</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="hideSettings()">Cancel</button>
+                <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!--=============== SCRIPTS ===============-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+
+</html> 
