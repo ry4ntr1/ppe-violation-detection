@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime, timedelta
 import queue
 import re
+import base64
 
 # Initialize the Flask application
 app = Flask(__name__)
@@ -958,6 +959,261 @@ Note: Violations are tracked from video start until the first complete loop.
         return status_msg
 
     return "No action taken"
+
+
+# PPE Screening Routes
+@app.route("/screening")
+def screening():
+    """PPE Screening station interface."""
+    return render_template("screening.html")
+
+
+@app.route("/screening/history")
+def screening_history():
+    """View screening history."""
+    # For now, redirect to screening page
+    # In the future, this could show a detailed history view
+    return redirect(url_for("screening"))
+
+
+# Screening API endpoints
+@app.route("/api/screening/sites", methods=["GET"])
+def api_screening_sites():
+    """Get available sites for screening."""
+    sites = [
+        {"id": "main-entrance", "name": "Main Entrance"},
+        {"id": "warehouse-a", "name": "Warehouse A"},
+        {"id": "warehouse-b", "name": "Warehouse B"},
+        {"id": "construction-site-1", "name": "Construction Site 1"},
+        {"id": "office-building", "name": "Office Building"},
+    ]
+    return jsonify(sites)
+
+
+@app.route("/api/screening/requirements", methods=["GET"])
+def api_screening_requirements():
+    """Get PPE requirements for screening."""
+    requirements = [
+        {
+            "id": "hardhat",
+            "name": "Hard Hat",
+            "icon": "ri-shield-line",
+            "required": True,
+        },
+        {
+            "id": "safety-vest",
+            "name": "Safety Vest",
+            "icon": "ri-shirt-line",
+            "required": True,
+        },
+        {
+            "id": "mask",
+            "name": "Face Mask",
+            "icon": "ri-surgical-mask-line",
+            "required": False,
+        },
+    ]
+    return jsonify(requirements)
+
+
+@app.route("/api/screening/detect", methods=["POST"])
+def api_screening_detect():
+    """Run detection on screening image."""
+    data = request.get_json()
+    image_data = data.get("image")
+    employee_id = data.get("employee_id")
+
+    if not image_data:
+        return jsonify({"error": "No image provided"}), 400
+
+    # Decode base64 image
+    try:
+        # Remove data URL prefix
+        image_data = image_data.split(",")[1] if "," in image_data else image_data
+        image_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    except Exception as e:
+        return jsonify({"error": f"Invalid image data: {str(e)}"}), 400
+
+    # Run detection
+    detector = get_detector("ppe")(conf=default_confidence)
+    detections = []
+
+    for box, label in detector.detect(img):
+        x1, y1, x2, y2 = box
+        # Extract class name and confidence - handle multi-word class names
+        parts = label.rsplit(" ", 1)  # Split from the right to get confidence
+        if len(parts) == 2:
+            class_name = parts[0]
+            confidence = float(parts[1])
+        else:
+            class_name = label
+            confidence = 1.0
+
+        detections.append(
+            {
+                "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                "class": class_name,
+                "confidence": confidence,
+            }
+        )
+
+    return jsonify({"detections": detections})
+
+
+@app.route("/api/screening/check-position", methods=["POST"])
+def api_screening_check_position():
+    """Check if person is properly positioned."""
+    data = request.get_json()
+    image_data = data.get("image")
+
+    if not image_data:
+        return jsonify({"error": "No image provided"}), 400
+
+    # Decode base64 image
+    try:
+        image_data = image_data.split(",")[1] if "," in image_data else image_data
+        image_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    except Exception:
+        return jsonify({"error": "Invalid image data"}), 400
+
+    # Run person detection
+    detector = get_detector("ppe")(conf=0.3)  # Lower confidence for person detection
+    persons = []
+
+    for box, label in detector.detect(img):
+        if "Person" in label:
+            x1, y1, x2, y2 = box
+            persons.append(
+                {
+                    "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                    "confidence": float(label.split()[-1]),
+                }
+            )
+
+    if not persons:
+        return jsonify(
+            {
+                "person_detected": False,
+                "position_ok": False,
+                "message": "No person detected",
+            }
+        )
+
+    # Check position of the most confident person detection
+    person = max(persons, key=lambda p: p["confidence"])
+    x1, y1, x2, y2 = person["bbox"]
+
+    # Calculate person position metrics
+    img_height, img_width = img.shape[:2]
+    person_width = x2 - x1
+    person_height = y2 - y1
+    person_center_x = (x1 + x2) / 2
+    person_center_y = (y1 + y2) / 2
+
+    # Check if person is well positioned
+    position_ok = True
+    messages = []
+
+    # Check if person is centered horizontally
+    center_tolerance = 0.2  # 20% tolerance
+    if person_center_x < img_width * (0.5 - center_tolerance):
+        messages.append("Move right")
+        position_ok = False
+    elif person_center_x > img_width * (0.5 + center_tolerance):
+        messages.append("Move left")
+        position_ok = False
+
+    # Check if person is at good distance (based on size)
+    ideal_height_ratio = 0.7  # Person should take up 70% of frame height
+    height_ratio = person_height / img_height
+
+    if height_ratio < 0.5:
+        messages.append("Move closer")
+        position_ok = False
+    elif height_ratio > 0.85:
+        messages.append("Move back")
+        position_ok = False
+
+    # Check if person is fully in frame
+    if y1 < 10:
+        messages.append("Move down slightly")
+        position_ok = False
+    if y2 > img_height - 10:
+        messages.append("Move up slightly")
+        position_ok = False
+
+    return jsonify(
+        {
+            "person_detected": True,
+            "position_ok": position_ok,
+            "message": " and ".join(messages) if messages else "Good position",
+        }
+    )
+
+
+@app.route("/api/screening/complete", methods=["POST"])
+def api_screening_complete():
+    """Complete screening and log results."""
+    data = request.get_json()
+
+    # Extract screening data
+    employee_id = data.get("employee_id")
+    site = data.get("site")
+    passed = data.get("passed")
+    detected_ppe = data.get("detected_ppe", [])
+    missing_ppe = data.get("missing_ppe", [])
+    timestamp = data.get("timestamp", datetime.now().isoformat())
+
+    # Log screening result
+    screening_log = {
+        "id": str(uuid.uuid4()),
+        "employee_id": employee_id,
+        "site": site,
+        "timestamp": timestamp,
+        "passed": passed,
+        "detected_ppe": detected_ppe,
+        "missing_ppe": missing_ppe,
+    }
+
+    # Store in memory (in production, this would go to a database)
+    if not hasattr(app, "screening_logs"):
+        app.screening_logs = []
+    app.screening_logs.append(screening_log)
+
+    # Send email alert if configured
+    if email_alert_enabled and email_recipient:
+        subject = f"PPE Screening {'Passed' if passed else 'Failed'} - {employee_id}"
+        message = f"""
+PPE Screening Result
+Employee ID: {employee_id}
+Site: {site}
+Time: {timestamp}
+Result: {"PASSED" if passed else "FAILED"}
+Detected PPE: {", ".join(detected_ppe) if detected_ppe else "None"}
+Missing PPE: {", ".join(missing_ppe) if missing_ppe else "None"}
+"""
+        try:
+            # For screening alerts, we might want different email settings
+            # but for now use the same email function
+            pass  # Email sending can be implemented as needed
+        except Exception as e:
+            print(f"Failed to send screening email: {e}")
+
+    # Send event for real-time monitoring
+    event_data = {
+        "type": "screening",
+        "employee_id": employee_id,
+        "site": site,
+        "passed": passed,
+        "timestamp": timestamp,
+    }
+    event_queue.put(("screening_result", event_data))
+
+    return jsonify({"success": True, "screening_id": screening_log["id"]})
 
 
 if __name__ == "__main__":

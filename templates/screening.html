@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!--=============== REMIXICONS ===============-->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    
+    <!--=============== CSS ===============-->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/screening.css') }}">
+    
+    <title>PPE Screening — Safety Compliance Check</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+
+<body>
+    <!--=============== HEADER ===============-->
+    <header class="header" id="header">
+        <img src="{{ url_for('static', filename='assets/bizmetric-logo.png') }}" alt="Bizmetric Logo" class="logo">
+        <div class="title">
+            <h1>PPE Screening Station</h1>
+        </div>
+        <div class="header-actions">
+            <a href="/dashboard" class="btn-icon" title="Dashboard">
+                <i class="ri-dashboard-line"></i>
+            </a>
+            <a href="/screening/history" class="btn-icon" title="Screening History">
+                <i class="ri-history-line"></i>
+            </a>
+        </div>
+    </header>
+
+    <!--=============== MAIN CONTENT ===============-->
+    <main class="screening-container">
+        <!--=============== EMPLOYEE ID SECTION ===============-->
+        <section class="employee-section" id="employee-section">
+            <div class="employee-card">
+                <h2>Enter Employee ID</h2>
+                <div class="employee-form">
+                    <input type="text" id="employee-id" placeholder="Employee ID" autofocus>
+                    <button class="btn-primary" onclick="startScreening()">
+                        <i class="ri-shield-check-line"></i> Start Screening
+                    </button>
+                </div>
+                <div class="site-selector">
+                    <label for="site-select">Site/Location:</label>
+                    <select id="site-select">
+                        <option value="">Select Site</option>
+                        <!-- Sites will be populated dynamically -->
+                    </select>
+                </div>
+                
+                <div class="divider-or">
+                    <span>OR</span>
+                </div>
+                
+                <div class="image-upload-section">
+                    <h3>Upload Image for Quick Check</h3>
+                    <p class="upload-hint">Upload a photo to instantly check PPE compliance</p>
+                    <input type="file" id="image-upload" accept="image/*" style="display: none;">
+                    <button class="btn-secondary" onclick="document.getElementById('image-upload').click()">
+                        <i class="ri-image-add-line"></i> Choose Image
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!--=============== SCREENING SECTION ===============-->
+        <section class="screening-section" id="screening-section" style="display: none;">
+            <div class="video-panel">
+                <div class="video-container">
+                    <video id="webcam" autoplay muted></video>
+                    <canvas id="detection-overlay"></canvas>
+                    
+                    <!-- Positioning Guide -->
+                    <div class="positioning-guide" id="positioning-guide">
+                        <div class="guide-message" id="guide-message">
+                            <i class="ri-user-location-line"></i>
+                            <span>Please position yourself in the center of the frame</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Detection Status -->
+                    <div class="detection-status" id="detection-status">
+                        <div class="status-indicator">
+                            <span class="status-dot"></span>
+                            <span class="status-text">Detecting...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="employee-info">
+                    <h3>Employee: <span id="current-employee-id"></span></h3>
+                    <p>Site: <span id="current-site"></span></p>
+                </div>
+            </div>
+
+            <div class="checklist-panel">
+                <h2>PPE Requirements</h2>
+                <div class="checklist" id="ppe-checklist">
+                    <!-- Checklist items will be populated dynamically -->
+                </div>
+                
+                <div class="screening-result" id="screening-result">
+                    <!-- Result will be shown here -->
+                </div>
+                
+                <div class="screening-actions">
+                    <button class="btn-secondary" onclick="cancelScreening()">
+                        <i class="ri-close-line"></i> Cancel
+                    </button>
+                    <button class="btn-primary" id="complete-btn" onclick="completeScreening()" disabled>
+                        <i class="ri-check-line"></i> Complete Screening
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!--=============== IMAGE DETECTION SECTION ===============-->
+        <section class="image-detection-section" id="image-detection-section" style="display: none;">
+            <div class="image-panel">
+                <div class="image-detection-container">
+                    <img id="uploaded-image" src="" alt="Uploaded image">
+                    <canvas id="image-detection-overlay"></canvas>
+                    
+                    <!-- Processing Status -->
+                    <div class="processing-status" id="processing-status">
+                        <div class="status-indicator">
+                            <span class="status-dot processing"></span>
+                            <span class="status-text">Analyzing Image...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="employee-info">
+                    <h3>Employee: <span id="image-employee-id"></span></h3>
+                    <p>Site: <span id="image-site"></span></p>
+                </div>
+            </div>
+
+            <div class="checklist-panel">
+                <h2>PPE Detection Results</h2>
+                <div class="checklist" id="image-ppe-checklist">
+                    <!-- Checklist items will be populated dynamically -->
+                </div>
+                
+                <div class="screening-result" id="image-screening-result">
+                    <!-- Result will be shown here -->
+                </div>
+                
+                <div class="screening-actions">
+                    <button class="btn-secondary" onclick="backToEmployeeSection()">
+                        <i class="ri-arrow-left-line"></i> Back
+                    </button>
+                    <button class="btn-primary" onclick="switchToLiveScreening()">
+                        <i class="ri-camera-line"></i> Try Live Screening
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!--=============== RESULT MODAL ===============-->
+    <div id="result-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="result-icon" id="result-icon">
+                <!-- Icon will be added dynamically -->
+            </div>
+            <h2 id="result-title"></h2>
+            <p id="result-message"></p>
+            <div class="result-details" id="result-details">
+                <!-- Details will be added dynamically -->
+            </div>
+            <button class="btn-primary" onclick="resetScreening()">
+                <i class="ri-refresh-line"></i> New Screening
+            </button>
+        </div>
+    </div>
+
+    <!--=============== SCRIPTS ===============-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="{{ url_for('static', filename='js/screening.js') }}"></script>
+</body>
+
+</html> 
