@@ -2,6 +2,9 @@
 
 A comprehensive AI-powered solution for detecting Personal Protective Equipment (PPE) violations in workplace environments. This system provides real-time monitoring, multi-source camera support, and pre-entry screening capabilities to ensure workplace safety compliance.
 
+[![PPE Violation Detection System](https://img.youtube.com/vi/sJuadMHUNNw/hqdefault.jpg)](https://www.youtube.com/watch?v=sJuadMHUNNw)
+
+
 ## 🚀 Key Features
 
 ### 1. **Real-time PPE Violation Detection**
