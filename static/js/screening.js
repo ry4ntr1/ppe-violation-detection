@@ -8,6 +8,7 @@ let requiredPPE = [];
 let detectedPPE = {};
 let positionCheckInterval = null;
 let autoCompleteTimeout = null;
+let videoSource = null; // For video file playback
 
 // Default PPE requirements (configurable)
 const defaultPPERequirements = [
@@ -24,6 +25,7 @@ const defaultPPERequirements = [
 $(document).ready(function () {
 	loadSites();
 	loadPPERequirements();
+	loadPPEVideos();
 
 	// Enter key handler for employee ID
 	$("#employee-id").on("keypress", function (e) {
@@ -34,6 +36,15 @@ $(document).ready(function () {
 
 	// Image upload handler
 	$("#image-upload").on("change", handleImageUpload);
+
+	// Video source change handler
+	$("#video-source-select").on("change", function () {
+		const selectedVideo = $(this).val();
+		if (selectedVideo) {
+			// Enable the start button
+			$("#start-screening-btn").prop("disabled", false);
+		}
+	});
 });
 
 // Load available sites
@@ -62,6 +73,32 @@ function loadSites() {
 	});
 }
 
+// Load PPE videos from static/ppe_videos/
+function loadPPEVideos() {
+	$.ajax({
+		url: "/api/screening/ppe_videos",
+		method: "GET",
+		success: function (data) {
+			const select = $("#video-source-select");
+			select.empty();
+			select.append('<option value="">Select a video source</option>');
+			
+			if (data.videos && data.videos.length > 0) {
+				data.videos.forEach((video) => {
+					select.append(`<option value="${video}">${video}</option>`);
+				});
+			} else {
+				select.append('<option value="" disabled>No videos available</option>');
+			}
+		},
+		error: function () {
+			console.error("Failed to load PPE videos");
+			const select = $("#video-source-select");
+			select.html('<option value="" disabled>Failed to load videos</option>');
+		},
+	});
+}
+
 // Load PPE requirements
 function loadPPERequirements() {
 	$.ajax({
@@ -81,6 +118,9 @@ function loadPPERequirements() {
 async function startScreening() {
 	const employeeId = $("#employee-id").val().trim();
 	const site = $("#site-select").val();
+	const screeningType =
+		$('input[name="screening-type"]:checked').val() || "webcam";
+	const videoFile = $("#video-source-select").val();
 
 	if (!employeeId) {
 		showNotification("Please enter Employee ID", "error");
@@ -89,6 +129,11 @@ async function startScreening() {
 
 	if (!site) {
 		showNotification("Please select a site", "error");
+		return;
+	}
+
+	if (screeningType === "video" && !videoFile) {
+		showNotification("Please select a video source", "error");
 		return;
 	}
 
@@ -112,20 +157,47 @@ async function startScreening() {
 	// Populate checklist
 	populateChecklist();
 
-	// Start webcam
+	// Start appropriate source
 	try {
-		await startWebcam();
+		if (screeningType === "video") {
+			await startVideoSource(videoFile);
+		} else {
+			await startWebcam();
+		}
 		screeningActive = true;
 		startDetection();
-		startPositionCheck();
+		if (screeningType === "webcam") {
+			startPositionCheck();
+		}
 	} catch (error) {
-		console.error("Failed to start webcam:", error);
+		console.error("Failed to start screening:", error);
 		showNotification(
-			"Failed to access webcam. Please check permissions.",
+			screeningType === "video"
+				? "Failed to load video. Please try another source."
+				: "Failed to access webcam. Please check permissions.",
 			"error"
 		);
 		cancelScreening();
 	}
+}
+
+// Start video source
+async function startVideoSource(videoFile) {
+	const video = document.getElementById("webcam");
+	
+	// Set video source
+	video.src = `/static/ppe_videos/${videoFile}`;
+	video.loop = true;
+	
+	// Wait for video to be ready
+	return new Promise((resolve, reject) => {
+		video.onloadedmetadata = () => {
+			video.play()
+				.then(resolve)
+				.catch(reject);
+		};
+		video.onerror = reject;
+	});
 }
 
 // Populate PPE checklist
@@ -501,119 +573,123 @@ function showScreeningResult(passed, data) {
 			.removeClass("fail")
 			.addClass("pass");
 		title.text("Screening Passed!");
-		message.text("All required PPE detected. You may proceed to the site.");
+		message.text("All required PPE has been detected successfully.");
 	} else {
 		icon
 			.html('<i class="ri-close-circle-fill"></i>')
 			.removeClass("pass")
 			.addClass("fail");
 		title.text("Screening Failed");
-		message.text(
-			"Missing required PPE. Please wear all required equipment and try again."
-		);
+		message.text("Please ensure all required PPE is worn properly.");
 	}
 
-	// Show details
-	details.html(`
-        <div class="result-detail">
-            <span class="result-detail-label">Employee ID:</span>
-            <span class="result-detail-value">${data.employee_id}</span>
-        </div>
-        <div class="result-detail">
-            <span class="result-detail-label">Site:</span>
-            <span class="result-detail-value">${$(
-							"#site-select option:selected"
-						).text()}</span>
-        </div>
-        <div class="result-detail">
-            <span class="result-detail-label">Time:</span>
-            <span class="result-detail-value">${new Date().toLocaleString()}</span>
-        </div>
-        <div class="result-detail">
-            <span class="result-detail-label">Detected PPE:</span>
-            <span class="result-detail-value">${
-							data.detected_ppe.join(", ") || "None"
-						}</span>
-        </div>
-        ${
-					data.missing_ppe.length > 0
-						? `
-        <div class="result-detail">
-            <span class="result-detail-label">Missing PPE:</span>
-            <span class="result-detail-value" style="color: var(--accent-red);">${data.missing_ppe.join(
-							", "
-						)}</span>
-        </div>
-        `
-						: ""
-				}
-    `);
+	// Build details
+	const detailsHtml = `
+		<div class="result-detail">
+			<span class="result-detail-label">Employee ID:</span>
+			<span class="result-detail-value">${data.employee_id}</span>
+		</div>
+		<div class="result-detail">
+			<span class="result-detail-label">Site:</span>
+			<span class="result-detail-value">${$(
+				"#site-select option:selected"
+			).text()}</span>
+		</div>
+		<div class="result-detail">
+			<span class="result-detail-label">Time:</span>
+			<span class="result-detail-value">${new Date().toLocaleString()}</span>
+		</div>
+		<div class="result-detail">
+			<span class="result-detail-label">PPE Detected:</span>
+			<span class="result-detail-value">${
+				data.detected_ppe.join(", ") || "None"
+			}</span>
+		</div>
+		${
+			data.missing_ppe.length > 0
+				? `
+		<div class="result-detail">
+			<span class="result-detail-label">Missing PPE:</span>
+			<span class="result-detail-value" style="color: var(--accent-red);">${data.missing_ppe.join(
+				", "
+			)}</span>
+		</div>
+		`
+				: ""
+		}
+	`;
+	details.html(detailsHtml);
 
-	modal.fadeIn();
+	// Show modal
+	modal.fadeIn(300);
 }
 
-// Stop screening
 function stopScreening() {
 	screeningActive = false;
 
+	// Stop detection
 	if (detectionInterval) {
 		clearInterval(detectionInterval);
 		detectionInterval = null;
 	}
 
+	// Stop position check
 	if (positionCheckInterval) {
 		clearInterval(positionCheckInterval);
 		positionCheckInterval = null;
 	}
 
+	// Clear auto-complete timeout
 	if (autoCompleteTimeout) {
 		clearTimeout(autoCompleteTimeout);
 		autoCompleteTimeout = null;
 	}
 
+	// Stop webcam
 	if (webcamStream) {
 		webcamStream.getTracks().forEach((track) => track.stop());
 		webcamStream = null;
 	}
+
+	// Stop video if playing
+	const video = document.getElementById("webcam");
+	if (video.src) {
+		video.pause();
+		video.src = "";
+	}
 }
 
-// Cancel screening
 function cancelScreening() {
 	stopScreening();
 	$("#screening-section").hide();
 	$("#employee-section").show();
-	$("#employee-id").val("").focus();
 }
 
-// Reset for new screening
 function resetScreening() {
-	$("#result-modal").fadeOut();
-	$("#image-detection-section").hide();
+	$("#result-modal").fadeOut(300);
 	cancelScreening();
+	// Clear form
+	$("#employee-id").val("");
+	$("#site-select").val("");
+	$("#video-source-select").val("");
 }
 
-// Show notification
 function showNotification(message, type = "info") {
-	const notification = $(`
-        <div class="notification notification-${type}">
-            <i class="ri-${getIconForType(type)} notification-icon"></i>
-            <span>${message}</span>
-        </div>
-    `);
-
-	$("body").append(notification);
-
-	setTimeout(() => notification.addClass("show"), 10);
-
-	setTimeout(() => {
-		notification.removeClass("show");
-		setTimeout(() => notification.remove(), 300);
-	}, 4000);
+	// Use the Apple UI notification system if available
+	if (window.AppleUI) {
+		window.AppleUI.showNotification({
+			message: message,
+			type: type,
+		});
+	} else {
+		// Fallback to simple alert
+		alert(message);
+	}
 }
 
 function getIconForType(type) {
 	const icons = {
-		success: "check-line",
+		success: "check-circle-line",
 		error: "error-warning-line",
 		warning: "alert-line",
 		info: "information-line",
@@ -626,33 +702,21 @@ function handleImageUpload(e) {
 	const file = e.target.files[0];
 	if (!file) return;
 
-	// Validate file type
 	if (!file.type.startsWith("image/")) {
-		showNotification("Please select a valid image file", "error");
+		showNotification("Please select an image file", "error");
 		return;
 	}
 
-	// Validate employee ID and site
-	const employeeId = $("#employee-id").val().trim();
-	const site = $("#site-select").val();
-
-	if (!employeeId) {
-		showNotification("Please enter Employee ID first", "error");
-		$("#image-upload").val("");
-		return;
-	}
-
-	if (!site) {
-		showNotification("Please select a site first", "error");
-		$("#image-upload").val("");
-		return;
-	}
-
-	// Read and process image
 	const reader = new FileReader();
 	reader.onload = function (event) {
-		// Process image for detection directly
-		processUploadedImage(event.target.result, employeeId, site);
+		const imageData = event.target.result;
+
+		// Get employee ID and site
+		const employeeId = $("#employee-id").val().trim() || "Guest";
+		const site = $("#site-select").val() || "main-entrance";
+
+		// Process the uploaded image
+		processUploadedImage(imageData, employeeId, site);
 	};
 	reader.readAsDataURL(file);
 }
@@ -660,11 +724,11 @@ function handleImageUpload(e) {
 // Clear image upload
 function clearImageUpload() {
 	$("#image-upload").val("");
+	$(".image-preview").remove();
 }
 
-// Process uploaded image for PPE detection
+// Process uploaded image
 function processUploadedImage(imageData, employeeId, site) {
-	// Update UI for image detection
 	currentEmployeeId = employeeId;
 	currentSite = site;
 
@@ -674,177 +738,119 @@ function processUploadedImage(imageData, employeeId, site) {
 		detectedPPE[item.id] = false;
 	});
 
-	// Update employee info
+	// Update UI
 	$("#image-employee-id").text(employeeId);
-	$("#image-site").text($("#site-select option:selected").text());
+	$("#image-site").text(
+		$("#site-select option:selected").text() || "Main Entrance"
+	);
 
-	// Show image detection section
+	// Switch views
 	$("#employee-section").hide();
 	$("#image-detection-section").show();
 
-	// Set uploaded image
+	// Display the image
 	$("#uploaded-image").attr("src", imageData);
 
-	// Populate checklist for image detection
+	// Populate checklist
 	populateImageChecklist();
 
 	// Show processing status
 	$("#processing-status").show();
 
-	// Wait for image to load before processing
-	$("#uploaded-image").on("load", function () {
-		// Get image dimensions for overlay
-		const img = this;
-		const canvas = document.getElementById("image-detection-overlay");
-		const ctx = canvas.getContext("2d");
+	// Send for detection
+	$.ajax({
+		url: "/api/screening/detect",
+		method: "POST",
+		contentType: "application/json",
+		data: JSON.stringify({
+			image: imageData,
+			employee_id: employeeId,
+		}),
+		success: function (results) {
+			// Process results
+			processImageDetectionResults(results);
 
-		// Set canvas size to match image display size
-		canvas.width = img.width;
-		canvas.height = img.height;
+			// Hide processing status
+			$("#processing-status").fadeOut();
 
-		// Send for detection
-		$.ajax({
-			url: "/api/screening/detect",
-			method: "POST",
-			contentType: "application/json",
-			data: JSON.stringify({
-				image: imageData,
+			// Show result
+			const allRequired = requiredPPE.filter((item) => item.required);
+			const detectedRequired = allRequired.filter(
+				(item) => detectedPPE[item.id]
+			);
+			const passed = detectedRequired.length === allRequired.length;
+
+			showImageUploadResult(passed, {
 				employee_id: employeeId,
-			}),
-			success: function (results) {
-				console.log("Detection results received:", results);
-
-				// Hide processing status
-				$("#processing-status").fadeOut();
-
-				// Draw detection boxes on image
-				drawImageDetections(results.detections, img);
-
-				// Process detection results
-				console.log("=== Image Detection Results ===");
-				console.log("All detections:", results.detections);
-
-				results.detections.forEach((detection) => {
-					const className = detection.class;
-					console.log(
-						`Detection class: "${className}", confidence: ${detection.confidence}`
-					);
-
-					// Match exact class names from the model
-					if (className === "Hardhat") {
-						console.log("  -> Matched as Hardhat");
-						detectedPPE["hardhat"] = true;
-					}
-					if (className === "Safety Vest") {
-						console.log("  -> Matched as Safety Vest");
-						detectedPPE["safety-vest"] = true;
-					}
-					// Also check for just "Safety" in case model outputs that
-					if (className === "Safety") {
-						console.log("  -> Found 'Safety' class, treating as Safety Vest");
-						detectedPPE["safety-vest"] = true;
-					}
-				});
-
-				console.log("Final detection state:", detectedPPE);
-
-				// Update checklist UI
-				updateImageChecklist();
-
-				// Check if all required PPE is detected
-				const allRequired = requiredPPE.filter((item) => item.required);
-				const detectedRequired = allRequired.filter(
-					(item) => detectedPPE[item.id]
-				);
-				const passed = detectedRequired.length === allRequired.length;
-
-				// Show result
-				const resultDiv = $("#image-screening-result");
-				if (passed) {
-					resultDiv.removeClass("fail").addClass("pass").show();
-					resultDiv.html(
-						'<h3><i class="ri-check-circle-line"></i> All required PPE detected!</h3>'
-					);
-
-					// Auto-complete after showing results for 2 seconds
-					setTimeout(() => {
-						showNotification(
-							"All required PPE detected! Completing screening...",
-							"success"
-						);
-
-						const screeningData = {
-							employee_id: employeeId,
-							site: site,
-							timestamp: new Date().toISOString(),
-							passed: true,
-							detected_ppe: Object.keys(detectedPPE).filter(
-								(key) => detectedPPE[key]
-							),
-							missing_ppe: [],
-							all_detections: detectedPPE,
-							method: "image_upload",
-						};
-
-						// Submit screening result
-						$.ajax({
-							url: "/api/screening/complete",
-							method: "POST",
-							contentType: "application/json",
-							data: JSON.stringify(screeningData),
-							success: function (response) {
-								showImageUploadResult(true, screeningData);
-							},
-							error: function () {
-								showNotification("Failed to save screening result", "error");
-							},
-						});
-					}, 2000);
-				} else {
-					const missing = allRequired
-						.filter((item) => !detectedPPE[item.id])
-						.map((item) => item.name)
-						.join(", ");
-					resultDiv.removeClass("pass").addClass("fail").show();
-					resultDiv.html(
-						`<h3><i class="ri-alert-line"></i> Missing: ${missing}</h3>`
-					);
-				}
-			},
-			error: function () {
-				$("#processing-status").fadeOut();
-				showNotification("Failed to analyze image. Please try again.", "error");
-				setTimeout(backToEmployeeSection, 2000);
-			},
-		});
+				site: site,
+				detected_ppe: Object.keys(detectedPPE).filter(
+					(key) => detectedPPE[key]
+				),
+				missing_ppe: Object.keys(detectedPPE).filter(
+					(key) =>
+						!detectedPPE[key] && requiredPPE.find((p) => p.id === key)?.required
+				),
+			});
+		},
+		error: function () {
+			$("#processing-status").fadeOut();
+			showNotification("Failed to process image", "error");
+		},
 	});
 }
 
-// Populate checklist for image detection
+function processImageDetectionResults(results) {
+	// Update detected PPE state
+	const newDetections = {};
+	requiredPPE.forEach((item) => {
+		newDetections[item.id] = false;
+	});
+
+	// Map detection classes to PPE items
+	results.detections.forEach((detection) => {
+		const className = detection.class;
+		if (className === "Hardhat") {
+			newDetections["hardhat"] = true;
+		}
+		if (className === "Safety Vest" || className === "Safety") {
+			newDetections["safety-vest"] = true;
+		}
+	});
+
+	// Update global state
+	detectedPPE = newDetections;
+
+	// Update checklist UI
+	updateImageChecklist();
+
+	// Draw detections on image
+	const img = document.getElementById("uploaded-image");
+	drawImageDetections(results.detections, img);
+}
+
 function populateImageChecklist() {
 	const checklist = $("#image-ppe-checklist");
 	checklist.empty();
 
 	requiredPPE.forEach((item) => {
 		const checklistItem = $(`
-			<div class="checklist-item" id="image-checklist-${item.id}">
-				<div class="checklist-icon">
-					<i class="${item.icon}"></i>
-				</div>
-				<div class="checklist-content">
-					<h4>${item.name}</h4>
-					<p>${item.required ? "Required" : "Optional"}</p>
-				</div>
-				<div class="checklist-status">
-					<span>Analyzing...</span>
-				</div>
-			</div>
-		`);
+            <div class="checklist-item" id="image-checklist-${item.id}">
+                <div class="checklist-icon">
+                    <i class="${item.icon}"></i>
+                </div>
+                <div class="checklist-content">
+                    <h4>${item.name}</h4>
+                    <p>${item.required ? "Required" : "Optional"}</p>
+                </div>
+                <div class="checklist-status">
+                    <span>Checking...</span>
+                </div>
+            </div>
+        `);
 		checklist.append(checklistItem);
 	});
 }
 
-// Update image checklist based on detections
 function updateImageChecklist() {
 	requiredPPE.forEach((item) => {
 		const isDetected = detectedPPE[item.id];
@@ -853,33 +859,30 @@ function updateImageChecklist() {
 
 		if (isDetected) {
 			checklistItem.removeClass("missing").addClass("detected");
-			statusText.text("Detected").removeClass("missing").addClass("detected");
-			checklistItem.find(".checklist-icon i").removeClass().addClass(item.icon);
+			statusText.text("Detected");
 		} else {
 			checklistItem.removeClass("detected").addClass("missing");
-			statusText
-				.text("Not Detected")
-				.removeClass("detected")
-				.addClass("missing");
-			checklistItem
-				.find(".checklist-icon i")
-				.removeClass()
-				.addClass("ri-close-line");
+			statusText.text("Not Detected");
 		}
 	});
 }
 
-// Draw detection boxes on uploaded image
 function drawImageDetections(detections, img) {
 	const canvas = document.getElementById("image-detection-overlay");
 	const ctx = canvas.getContext("2d");
 
+	// Set canvas size to match image
+	canvas.width = img.naturalWidth;
+	canvas.height = img.naturalHeight;
+
+	// Scale canvas to display size
+	const scaleX = img.width / img.naturalWidth;
+	const scaleY = img.height / img.naturalHeight;
+	canvas.style.width = img.width + "px";
+	canvas.style.height = img.height + "px";
+
 	// Clear canvas
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-	// Calculate scale factors
-	const scaleX = canvas.width / img.naturalWidth;
-	const scaleY = canvas.height / img.naturalHeight;
 
 	// Draw each detection
 	detections.forEach((detection) => {
@@ -887,110 +890,59 @@ function drawImageDetections(detections, img) {
 		const label = detection.class;
 		const confidence = detection.confidence;
 
-		// Scale coordinates
-		const scaledX1 = x1 * scaleX;
-		const scaledY1 = y1 * scaleY;
-		const scaledX2 = x2 * scaleX;
-		const scaledY2 = y2 * scaleY;
-
 		// Determine color based on type
 		let color = "#3b82f6"; // Default blue
 		if (label.startsWith("NO-")) {
 			color = "#ef4444"; // Red for violations
-		} else if (
-			label === "Hardhat" ||
-			label === "Safety Vest" ||
-			label === "Safety" ||
-			label === "Mask"
-		) {
+		} else if (["Hardhat", "Safety Vest", "Safety", "Mask"].includes(label)) {
 			color = "#22c55e"; // Green for PPE
-		} else if (label === "Person") {
-			color = "#3b82f6"; // Blue for person
 		}
 
 		// Draw bounding box
 		ctx.strokeStyle = color;
 		ctx.lineWidth = 3;
-		ctx.strokeRect(
-			scaledX1,
-			scaledY1,
-			scaledX2 - scaledX1,
-			scaledY2 - scaledY1
-		);
+		ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
-		// Draw label background
+		// Draw label
 		ctx.fillStyle = color;
 		const text = `${label} ${Math.round(confidence * 100)}%`;
 		ctx.font = "16px Arial";
 		const textWidth = ctx.measureText(text).width;
-		ctx.fillRect(scaledX1, scaledY1 - 25, textWidth + 10, 25);
+		ctx.fillRect(x1, y1 - 25, textWidth + 10, 25);
 
-		// Draw label text
 		ctx.fillStyle = "white";
-		ctx.fillText(text, scaledX1 + 5, scaledY1 - 7);
+		ctx.fillText(text, x1 + 5, y1 - 7);
 	});
 }
 
-// Back to employee section
 function backToEmployeeSection() {
 	$("#image-detection-section").hide();
 	$("#employee-section").show();
 	clearImageUpload();
 }
 
-// Switch to live screening
 function switchToLiveScreening() {
 	$("#image-detection-section").hide();
+	clearImageUpload();
 	startScreening();
 }
 
-// Show result for image upload
 function showImageUploadResult(passed, data) {
-	const modal = $("#result-modal");
-	const icon = $("#result-icon");
-	const title = $("#result-title");
-	const message = $("#result-message");
-	const details = $("#result-details");
+	const resultDiv = $("#image-screening-result");
 
 	if (passed) {
-		icon
-			.html('<i class="ri-check-circle-fill"></i>')
-			.removeClass("fail")
-			.addClass("pass");
-		title.text("Image Check Passed!");
-		message.text(
-			"All required PPE detected in the uploaded image. You may proceed to the site."
+		resultDiv.removeClass("fail").addClass("pass").show();
+		resultDiv.html(
+			'<h3><i class="ri-check-circle-line"></i> All required PPE detected!</h3>'
+		);
+	} else {
+		const missing = data.missing_ppe
+			.map((id) => requiredPPE.find((p) => p.id === id)?.name)
+			.filter(Boolean)
+			.join(", ");
+		resultDiv.removeClass("pass").addClass("fail").show();
+		resultDiv.html(
+			`<h3><i class="ri-alert-line"></i> Missing: ${missing}</h3>`
 		);
 	}
-
-	// Show details
-	details.html(`
-        <div class="result-detail">
-            <span class="result-detail-label">Employee ID:</span>
-            <span class="result-detail-value">${data.employee_id}</span>
-        </div>
-        <div class="result-detail">
-            <span class="result-detail-label">Site:</span>
-            <span class="result-detail-value">${$(
-							"#site-select option:selected"
-						).text()}</span>
-        </div>
-        <div class="result-detail">
-            <span class="result-detail-label">Time:</span>
-            <span class="result-detail-value">${new Date().toLocaleString()}</span>
-        </div>
-        <div class="result-detail">
-            <span class="result-detail-label">Method:</span>
-            <span class="result-detail-value">Image Upload</span>
-        </div>
-        <div class="result-detail">
-            <span class="result-detail-label">Detected PPE:</span>
-            <span class="result-detail-value">${
-							data.detected_ppe.join(", ") || "None"
-						}</span>
-        </div>
-    `);
-
-	modal.fadeIn();
-	clearImageUpload();
 }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
@@ -59,12 +59,19 @@
                     <span>OR</span>
                 </div>
                 
-                <div class="image-upload-section">
-                    <h3>Upload Image for Quick Check</h3>
-                    <p class="upload-hint">Upload a photo to instantly check PPE compliance</p>
-                    <input type="file" id="image-upload" accept="image/*" style="display: none;">
-                    <button class="btn-secondary" onclick="document.getElementById('image-upload').click()">
-                        <i class="ri-image-add-line"></i> Choose Image
+                <div class="quick-check-card">
+                    <h3>Select Sample Video for Quick Check</h3>
+                    <p class="card-subtitle">Choose a pre-loaded video to instantly check PPE compliance.</p>
+
+                    <div class="form-group">
+                        <label for="sample-video" class="sr-only">Sample Videos</label>
+                        <select id="sample-video" class="focus-ring" style="width: 100%; padding: var(--space-sm) var(--space-md);">
+                            <option value="">Loading videos…</option>
+                        </select>
+                    </div>
+
+                    <button class="btn-primary button-press" id="run-quick-check" disabled>
+                        <i class="ri-shield-check-line"></i> Run Quick Check
                     </button>
                 </div>
             </div>
@@ -184,7 +191,65 @@
 
     <!--=============== SCRIPTS ===============-->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script>
+        // Initialize theme
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            applyTheme(savedTheme);
+        }
+        
+        function applyTheme(theme) {
+            if (theme === 'auto') {
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                theme = prefersDark ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-theme', theme);
+        }
+        
+        // Apply theme immediately
+        initializeTheme();
+        
+        // Listen for system theme changes
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            const currentTheme = localStorage.getItem('theme');
+            if (currentTheme === 'auto') {
+                applyTheme('auto');
+            }
+        });
+    </script>
     <script src="{{ url_for('static', filename='js/screening.js') }}"></script>
+    <script>
+    // Populate sample videos dropdown
+    fetch('/api/sample_videos').then(r=>r.json()).then(data=>{
+        const sel=document.getElementById('sample-video');
+        sel.innerHTML='';
+        if(data.videos.length===0){
+            sel.innerHTML='<option value="">No sample videos found</option>';
+            return;
+        }
+        sel.innerHTML='<option value="">-- Select Video --</option>' +
+            data.videos.map(v=>`<option value="${v}">${v}</option>`).join('');
+    });
+
+    // Enable button when selected
+    const sel=document.getElementById('sample-video');
+    const btn=document.getElementById('run-quick-check');
+    sel.addEventListener('change',()=>{
+        btn.disabled=!sel.value;
+    });
+
+    btn.addEventListener('click',()=>{
+        if(!sel.value) return;
+        // Reuse existing addSource API to add sample video then open view page
+        fetch('/api/sources',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({name:sel.value,type:'file',path:`ppe_videos/video/${sel.value}`})
+        }).then(r=>r.json()).then(src=>{
+            if(src.id){window.open(`/camera/${src.id}`,'_blank');}
+        });
+    });
+    </script>
 </body>
 
 </html> 

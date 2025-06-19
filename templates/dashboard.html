@@ -15,6 +15,9 @@
     <!--=============== CSS ===============-->
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/animations.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/apple-components.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/violation-banner.css') }}">
     
     <title>PPE Detection Dashboard — Multi-Source Monitoring</title>
     
@@ -30,8 +33,9 @@
             <h1>PPE Detection Dashboard</h1>
         </div>
         <div class="header-actions">
-            <a href="/screening" class="btn-primary" style="margin-right: var(--space-md);">
-                <i class="ri-shield-check-line"></i> PPE Screening
+            <a href="/screening" class="btn-primary button-press">
+                <i class="ri-shield-check-line"></i> 
+                <span class="btn-text">PPE Screening</span>
             </a>
             <button class="btn-icon" onclick="toggleFullscreen()" title="Fullscreen">
                 <i class="ri-fullscreen-line"></i>
@@ -45,14 +49,14 @@
     <!--=============== MAIN DASHBOARD ===============-->
     <main class="dashboard-container">
         <!--=============== SUMMARY CARDS ===============-->
-        <section class="summary-section">
+        <section class="summary-section animate-cascade">
             <div class="summary-card">
                 <div class="card-icon">
                     <i class="ri-camera-line"></i>
                 </div>
                 <div class="card-content">
                     <h3>Active Sources</h3>
-                    <p class="card-value" id="active-sources">0</p>
+                    <p class="card-value number-transition" id="active-sources">0</p>
                 </div>
             </div>
             
@@ -61,8 +65,8 @@
                     <i class="ri-alert-line"></i>
                 </div>
                 <div class="card-content">
-                    <h3>Active Violations</h3>
-                    <p class="card-value" id="active-violations">0</p>
+                    <h3>Violation Categories</h3>
+                    <p class="card-value number-transition" id="active-violations">0</p>
                 </div>
             </div>
             
@@ -72,7 +76,7 @@
                 </div>
                 <div class="card-content">
                     <h3>Compliance Rate</h3>
-                    <p class="card-value" id="compliance-rate">100%</p>
+                    <p class="card-value number-transition" id="compliance-rate">100%</p>
                 </div>
             </div>
             
@@ -88,7 +92,7 @@
         </section>
 
         <!--=============== TIMELINE SECTION ===============-->
-        <section class="timeline-section">
+        <section class="timeline-section animate-on-load">
             <div class="section-header">
                 <h2>Detection Timeline</h2>
                 <div class="timeline-controls">
@@ -98,7 +102,7 @@
                         <option value="1800">Last 30 minutes</option>
                         <option value="3600">Last 1 hour</option>
                     </select>
-                    <button class="btn-secondary" onclick="exportTimeline()">
+                    <button class="btn-secondary button-press" onclick="exportTimeline()">
                         <i class="ri-download-line"></i> Export
                     </button>
                 </div>
@@ -110,15 +114,15 @@
         </section>
 
         <!--=============== SOURCE LIST ===============-->
-        <section class="sources-section">
+        <section class="sources-section animate-on-load">
             <div class="section-header">
                 <h2>Camera Sources</h2>
-                <button class="btn-primary" onclick="showAddSourceModal()">
+                <button class="btn-primary button-press" onclick="showAddSourceModal()">
                     <i class="ri-add-line"></i> Add Source
                 </button>
             </div>
             
-            <div class="sources-grid" id="sources-grid">
+            <div class="sources-grid animate-cascade" id="sources-grid">
                 <!-- Source cards will be dynamically added here -->
             </div>
         </section>
@@ -136,30 +140,30 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label for="source-type">Source Type</label>
-                    <select id="source-type">
+                    <select id="source-type" class="focus-ring">
                         <option value="file">Video File</option>
                         <option value="stream">Live Stream</option>
                     </select>
                 </div>
                 <div class="form-group" id="file-select-group">
                     <label for="video-file">Select Video</label>
-                    <select id="video-file">
+                    <select id="video-file" class="focus-ring">
                         <!-- Options will be populated dynamically -->
                     </select>
                 </div>
                 <div class="form-group" id="stream-url-group" style="display: none;">
                     <label for="stream-url">Stream URL</label>
-                    <input type="text" id="stream-url" placeholder="rtsp://...">
+                    <input type="text" id="stream-url" class="focus-ring" placeholder="rtsp://...">
                 </div>
                 <div class="form-group">
                     <label for="source-name">Source Name (Optional)</label>
-                    <input type="text" id="source-name" placeholder="e.g., Main Entrance">
+                    <input type="text" id="source-name" class="focus-ring" placeholder="e.g., Main Entrance">
                     <small style="color: var(--text-secondary); font-size: var(--text-xs);">Leave blank to auto-generate name</small>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" onclick="hideAddSourceModal()">Cancel</button>
-                <button class="btn-primary" onclick="addSource()">Add Source</button>
+                <button class="btn-secondary button-press" onclick="hideAddSourceModal()">Cancel</button>
+                <button class="btn-primary button-press" onclick="addSource()">Add Source</button>
             </div>
         </div>
     </div>
@@ -176,7 +180,7 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label for="alert-email">Alert Email</label>
-                    <input type="email" id="alert-email" placeholder="alert@example.com" value="{{ email_recipient }}">
+                    <input type="email" id="alert-email" class="focus-ring" placeholder="alert@example.com" value="{{ email_recipient }}">
                 </div>
                 <div class="form-group">
                     <label>
@@ -186,19 +190,40 @@
                 </div>
                 <div class="form-group">
                     <label for="detection-confidence">Detection Confidence</label>
-                    <input type="range" id="detection-confidence" min="0" max="100" value="50">
-                    <span id="confidence-value">50%</span>
+                    <div style="display: flex; align-items: center; gap: var(--space-md);">
+                        <input type="range" id="detection-confidence" min="0" max="100" value="50" style="flex: 1;">
+                        <span id="confidence-value" style="min-width: 40px;">50%</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Display Theme</label>
+                    <div style="display: flex; gap: var(--space-md); margin-top: var(--space-sm);">
+                        <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer;">
+                            <input type="radio" name="theme" value="light" id="theme-light">
+                            <span><i class="ri-sun-line"></i> Light</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer;">
+                            <input type="radio" name="theme" value="dark" id="theme-dark" checked>
+                            <span><i class="ri-moon-line"></i> Dark</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer;">
+                            <input type="radio" name="theme" value="auto" id="theme-auto">
+                            <span><i class="ri-computer-line"></i> System</span>
+                        </label>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" onclick="hideSettings()">Cancel</button>
-                <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+                <button class="btn-secondary button-press" onclick="hideSettings()">Cancel</button>
+                <button class="btn-primary button-press" onclick="saveSettings()">Save Settings</button>
             </div>
         </div>
     </div>
 
     <!--=============== SCRIPTS ===============-->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="{{ url_for('static', filename='js/apple-ui-components.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/violation-banner.js') }}"></script>
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 

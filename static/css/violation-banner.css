@@ -1,0 +1,186 @@
+/* Violation Banner System Styles */
+
+.violation-banner-container {
+    position: fixed;
+    top: calc(var(--header-height) + var(--space-md));
+    right: var(--space-md);
+    z-index: 900;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    max-height: calc(100vh - var(--header-height) - var(--space-xl));
+    overflow-y: auto;
+    pointer-events: none;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+}
+
+.violation-banner {
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-left: 4px solid var(--accent-red);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    will-change: transform, opacity;
+    transform: translate3d(440px, 0, 0);
+    transition: transform 0.35s ease-out, opacity 0.35s ease-out;
+    pointer-events: auto;
+    overflow: hidden;
+    cursor: grab;
+    min-width: 320px;
+    max-width: 380px;
+    scrollbar-width: none; /* Firefox */
+}
+
+.violation-banner::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+}
+
+.violation-banner.show {
+    transform: translate3d(0, 0, 0);
+}
+
+.violation-banner.pulse {
+    animation: bannerPulse 0.6s ease;
+}
+
+@keyframes bannerPulse {
+    0%, 100% { transform: translateX(0) scale(1); }
+    50% { transform: translateX(0) scale(1.02); }
+}
+
+.banner-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+}
+
+.banner-icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    background: rgba(239, 68, 68, 0.1);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-red);
+    font-size: 20px;
+}
+
+.banner-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.banner-title {
+    font-size: var(--text-md);
+    font-weight: var(--font-semibold);
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.banner-message {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    white-space: normal;
+    word-break: break-word;
+}
+
+.banner-actions {
+    display: flex;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+}
+
+.banner-action {
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.banner-action:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.banner-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: rgba(239, 68, 68, 0.2);
+}
+
+.banner-progress::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    background: var(--accent-red);
+    animation: progressFill 5s linear forwards;
+}
+
+@keyframes progressFill {
+    to { width: 100%; }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+    .violation-banner-container {
+        left: var(--space-md);
+        right: var(--space-md);
+        max-width: none;
+    }
+    
+    .violation-banner {
+        transform: translateY(-100px);
+    }
+    
+    .violation-banner.show {
+        transform: translateY(0);
+    }
+}
+
+/* Violation type specific styling */
+.violation-banner.violation-no-hardhat {
+    border-left-color: #ef4444;
+}
+
+.violation-banner.violation-no-hardhat .banner-icon {
+    color: #ef4444;
+}
+
+.violation-banner.violation-no-mask {
+    border-left-color: #f97316;
+}
+
+.violation-banner.violation-no-mask .banner-icon {
+    color: #f97316;
+}
+
+.violation-banner.violation-no-safety-vest {
+    border-left-color: #eab308;
+}
+
+.violation-banner.violation-no-safety-vest .banner-icon {
+    color: #eab308;
+}
+
+.violation-banner-container > * {
+    pointer-events: auto;
+} 

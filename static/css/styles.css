@@ -22,6 +22,9 @@
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.2);
+  
+  --bg-hover: rgba(255, 255, 255, 0.08);
   
   /*========== Typography ==========*/
   --font-primary: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -62,6 +65,59 @@
   --transition-fast: 150ms ease;
   --transition-base: 250ms ease;
   --transition-slow: 350ms ease;
+  
+  /*========== Layout ==========*/
+  --header-height: 100px;
+}
+
+/*========== Light Theme Variables ==========*/
+[data-theme="light"] {
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F2F2F7;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-glass: rgba(255, 255, 255, 0.72);
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  
+  --text-primary: #1C1C1E;
+  --text-secondary: #6C6C70;
+  --text-tertiary: #8E8E93;
+  
+  --accent-blue: #0071E3;
+  --accent-blue-hover: #0077ED;
+  --accent-green: #34C759;
+  --accent-orange: #FF9500;
+  --accent-red: #FF3B30;
+  
+  --border-color: rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.15);
+}
+
+/*========== Dark Theme Variables (Explicit) ==========*/
+[data-theme="dark"] {
+  --bg-primary: #000000;
+  --bg-secondary: #1C1C1E;
+  --bg-card: rgba(28, 28, 30, 0.85);
+  --bg-glass: rgba(28, 28, 30, 0.72);
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  
+  --text-primary: #FFFFFF;
+  --text-secondary: #A1A1A6;
+  --text-tertiary: #8E8E93;
+  
+  --accent-blue: #0071E3;
+  --accent-blue-hover: #0077ED;
+  --accent-green: #34C759;
+  --accent-orange: #FF9500;
+  --accent-red: #FF3B30;
+  
+  --border-color: rgba(255, 255, 255, 0.1);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.2);
 }
 
 /*=============== RESET ===============*/
@@ -621,4 +677,61 @@ input {
   50% {
     box-shadow: 0 4px 20px rgba(0, 113, 227, 0.5), 0 0 30px rgba(0, 113, 227, 0.3);
   }
+}
+
+/* Additional Dark Mode Button Styles */
+[data-theme="dark"] .btn-primary {
+    background: var(--accent-blue);
+    color: white;
+    border-color: var(--accent-blue);
+}
+
+[data-theme="dark"] .btn-primary:hover {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+[data-theme="dark"] .btn-secondary {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+[data-theme="dark"] .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+[data-theme="dark"] .btn-icon {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+[data-theme="dark"] .btn-icon:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+[data-theme="dark"] .time-range-select {
+    background: var(--bg-secondary);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+[data-theme="dark"] .close-btn {
+    color: white;
+}
+
+[data-theme="dark"] .close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Hide scrollbars utility */
+.no-scrollbar {
+    scrollbar-width: none; /* Firefox */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
 }

@@ -1,0 +1,260 @@
+/* Apple-Inspired Animations & Transitions */
+
+/* =============== CORE ANIMATIONS =============== */
+
+/* Smooth entrance animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Pulse animation for live indicators */
+@keyframes gentlePulse {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.05);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Loading shimmer effect */
+@keyframes shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+/* Smooth rotation for loading states */
+@keyframes smoothRotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Success checkmark animation */
+@keyframes checkmark {
+    0% {
+        stroke-dashoffset: 100;
+        opacity: 0;
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        stroke-dashoffset: 0;
+        opacity: 1;
+    }
+}
+
+/* =============== TRANSITION CLASSES =============== */
+
+/* Page load animations */
+.animate-on-load {
+    animation: fadeInUp 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.animate-cascade > * {
+    animation: fadeInUp 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+}
+
+.animate-cascade > *:nth-child(1) { animation-delay: 0.1s; }
+.animate-cascade > *:nth-child(2) { animation-delay: 0.2s; }
+.animate-cascade > *:nth-child(3) { animation-delay: 0.3s; }
+.animate-cascade > *:nth-child(4) { animation-delay: 0.4s; }
+
+/* Hover effects - disabled for cleaner UI */
+.hover-lift {
+    transition: none;
+}
+
+.hover-lift:hover {
+    /* No hover effects */
+}
+
+/* Button press effect */
+.button-press {
+    transition: transform 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.button-press:active {
+    transform: scale(0.98);
+}
+
+/* Smooth color transitions */
+.color-transition {
+    transition: background-color 0.3s ease,
+                color 0.3s ease,
+                border-color 0.3s ease;
+}
+
+/* Loading states */
+.skeleton-loader {
+    background: linear-gradient(
+        90deg,
+        var(--bg-secondary) 0%,
+        var(--bg-hover) 50%,
+        var(--bg-secondary) 100%
+    );
+    background-size: 1000px 100%;
+    animation: shimmer 2s infinite linear;
+}
+
+/* Status indicators */
+.status-glow {
+    position: relative;
+}
+
+.status-glow::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background: inherit;
+    filter: blur(8px);
+    opacity: 0.5;
+    animation: gentlePulse 2s infinite;
+}
+
+/* Card interactions */
+.interactive-card {
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    cursor: pointer;
+}
+
+.interactive-card:hover {
+    transform: translateY(-2px) scale(1.02);
+}
+
+.interactive-card:active {
+    transform: translateY(0) scale(1);
+}
+
+/* Smooth number transitions */
+.number-transition {
+    transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Detection overlay animations */
+.detection-box {
+    animation: scaleIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Modal animations */
+.modal-backdrop {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-content {
+    animation: scaleIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Timeline event animations */
+.timeline-event {
+    animation: slideInRight 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Notification slide */
+.notification-slide {
+    animation: slideInRight 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Focus states */
+.focus-ring {
+    position: relative;
+}
+
+.focus-ring:focus {
+    outline: none;
+}
+
+.focus-ring:focus::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    border: 2px solid var(--accent-blue);
+    border-radius: inherit;
+    opacity: 0;
+    animation: focusRing 0.3s forwards;
+}
+
+@keyframes focusRing {
+    to {
+        opacity: 1;
+    }
+}
+
+/* Smooth scroll behavior */
+.smooth-scroll {
+    scroll-behavior: smooth;
+}
+
+/* Parallax effect for backgrounds */
+.parallax {
+    transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Spring animation for important actions */
+@keyframes spring {
+    0% { transform: scale(1); }
+    25% { transform: scale(0.95); }
+    50% { transform: scale(1.1); }
+    75% { transform: scale(0.98); }
+    100% { transform: scale(1); }
+}
+
+.spring-action {
+    animation: spring 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+} 

@@ -249,8 +249,13 @@ def process_detections(source_id):
             if any(v in label for v in ["NO-Hardhat", "NO-Mask", "NO-Safety Vest"]):
                 frame_has_violation = True
                 # Extract violation info
-                violation_class = label.split()[0]
-                confidence = float(label.split()[-1])
+                # For "NO-Safety Vest", we need to handle the space
+                if "NO-Safety Vest" in label:
+                    violation_class = "NO-Safety Vest"
+                    confidence = float(label.split()[-1])
+                else:
+                    violation_class = label.split()[0]
+                    confidence = float(label.split()[-1])
 
                 # Create unique event ID for tracking
                 timestamp = datetime.now()
@@ -569,7 +574,11 @@ def generate_processed_frames(
                 ):
                     violations_detected = True
                     # Extract the class name from the label (e.g., "NO-Hardhat 0.95" -> "NO-Hardhat")
-                    violation_class = label.split()[0]
+                    # Handle "NO-Safety Vest" with space
+                    if "NO-Safety Vest" in label:
+                        violation_class = "NO-Safety Vest"
+                    else:
+                        violation_class = label.split()[0]
                     record_violation(violation_class)
 
                 # PPE detector returns (x1, y1, x2, y2) for bounding box
